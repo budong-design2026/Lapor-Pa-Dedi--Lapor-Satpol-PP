@@ -156,7 +156,7 @@ export function LaporView() {
   }
 
   // ─── Photos ───
-  function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
 
