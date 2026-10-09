@@ -1,0 +1,180 @@
+
+4. `src/components/views/masyarakat/track-view.tsx` — Ticket lookup. Search form (GlassCard): `Input` (placeholder "YP-YYYYMMDD-XXXX", font-mono uppercase, autocomplete off) + gold "Lacak" Button (Loader2 spinner when loading). On submit → `apiFetch('/api/reports/track/${encodeURIComponent(ticket.toUpperCase())})`. On 404 → `<EmptyState icon={SearchX} title="Tiket tidak ditemukan" action="Lapor Baru" → setView('lapor')>`. On other error → `<EmptyState icon={AlertTriangle} action="Coba lagi">`. Pre-fills from `?ticket=` query param via `useEffect` reading `window.location.search` (hydration-safe, with `initialFetched` ref guard; cleans URL via `history.replaceState` after). Result is a `TrackResult` GlassCard with:
+   - Ticket number big gold-shimmer mono (`GoldShimmerText as="span"`) + Copy button (clipboard)
+   - StatusBadge + RiskBadge inline
+   - Right column: createdAt `timeAgo`, SLA remaining (overdue red+bold), assignedBidangName
+   - Grid: category (CategoryIcon + name + sub-category) + alamat kejadian (address + kabupaten)
+   - Description block
+   - **4-step pipeline** (`Pipeline` sub-component): Diterima→Diverifikasi→Diproses→Selesai horizontal stepper; current step gold (#ffd600 + glow ring), completed steps green with `Check` icon, pending steps muted. Special-case `DITOLAK` → destructive alert box.
+   - Photos grid (from second `/api/reports/[id]` fetch — best-effort, ignored on failure)
+   - `<MapPreview>` (only when extra has finite non-zero lat/lng)
+   - **Timeline** (`<ol>` with `before:` pseudo-element vertical line): each entry has color-coded icon by `type` (PROGRESS=MessageSquare #3b82f6, VERIFY=Search #a855f7, ASSIGN=Send #0d47a1, STATUS=RefreshCw #f9a825, ESCALATE=AlertTriangle #ef4444; fallback MessageSquare), label pill, timeAgo, author name (or omitted), note text. Empty timeline → EmptyState "Belum ada catatan".
+
+5. `src/components/views/masyarakat/transparency-view.tsx` — Public dashboard. Header `<GoldShimmerText>Transparansi Publik</GoldShimmerText>` + subtitle. 4 `StatCard`s (Total Laporan / Bulan Ini / Selesai / Tingkat Penyelesaian %) fetched via plain useEffect+apiFetch('/api/reports/stats'). Responsive chart height via matchMedia (`(min-width:640px)` → 300 else 220) updated on viewport change.
+   - **Bar chart** byCategory (top 8): recharts `BarChart` + `Bar` (fill="#ffd600", radius, maxBarSize 48) + `XAxis` (rotated -25° textAnchor end) + `YAxis` + `CartesianGrid` (dashed) + `Tooltip` (dark glass styling with gold label) + `ResponsiveContainer`. Categories pre-shortened via `shortLabel(name,14)`.
+   - **Donut/Pie chart** byStatus: recharts `PieChart` + `Pie` (innerRadius computed from chartHeight, outerRadius computed, paddingAngle 2) with per-`Cell` fill from `REPORT_STATUSES[status].color`; `Legend` iconType="circle".
+   - **Line chart** last7Days: recharts `LineChart` + `Line` (stroke="#ffd600", strokeWidth 3, dot r=4, activeDot r=6) + axes + grid + tooltip. X-axis formatted as `dd/mm` via `shortDate(iso)`.
+   - **Risk distribution** (right column): 4 mini cards (emoji + count + label + SLA label) with inset box-shadow per risk color.
+   - **Top 10 Kabupaten/Kota**: custom horizontal bars in `<ul className="max-h-96 overflow-y-auto custom-scroll">`; each row: label + count (mono gold) + gradient bar (linear-gradient #ffd600→#f9a825, width% = count/maxCount*100, min 6% for visibility).
+   - **Privacy note**: GlassCard with `Lock` icon: "Data agregat. Detail laporan tidak dipublikasikan untuk melindungi privasi pelapor."
+
+6. `src/components/views/masyarakat/login-view.tsx` — Centered login. Icon header `ShieldCheck` + `<GoldShimmerText>Masuk Petugas</GoldShimmerText>` + subtitle. Form: Email `Input` with leading `Mail` icon (type=email, autocomplete=email, regex validation `/^.+@.+\..+$/`), Password `Input` with leading `KeyRound` icon (type=password, min 6 chars). Submit Button gold full-width with `Loader2` when loading. On submit → `apiFetch('/api/auth/login', {method:'POST', body: JSON.stringify({email, password})})`. On 200: `setUser(res.user)` (store auto-routes to operator-inbox or pimpinan-command). On 401: inline alert + `toast.error("Email atau password salah")`. On 400: same. `<details>` collapsible "Lihat kredensial demo" lists operator@jabar.go.id / operator123 + kasatpol@jabar.go.id / kasatpol123 with "Isi otomatis" button per credential. Footer: "Kembali ke Beranda" (setView('home')) + "Saya warga, ingin lapor" (setView('lapor')).
+
+Lint + Type Check:
+- `bun run lint` clean (0 errors, 0 warnings) across the whole project. Initial run flagged 3 unused eslint-disable directives (react-hooks/exhaustive-deps in lapor-view cleanup useEffect + 2× @next/next/no-img-element for `<img>` tags in lapor-view and track-view) — fixed by removing the redundant disable comments (the rules weren't actually firing because we use local object URLs / shared uploads, not remote http URLs needing next/image).
+- `bunx tsc --noEmit --skipLibCheck` reports **0 errors in any `src/components/views/masyarakat/*` file**. (Errors elsewhere — `category-icon.tsx` "no exported member 'Road'", `api/reports/route.ts` Prisma typing, `api/operator/inbox/route.ts` `where.AND` unknown — are NOT my files; the Road/Road component works at runtime because lucide-react v0.525 has `Road` despite the .d.ts being incomplete; that error pre-exists from Task 4.)
+- Also fixed 2 type errors that surfaced only via `tsc` (not via lint): used `as="p"` on `<GoldShimmerText>` in lapor-view success state and track-view ticket display — the `Tag` type only allows `'span'|'h1'|'h2'|'h3'`. Changed both to `as="span"` (parent `<div className="flex items-center justify-center gap-2">` already provides block context). Re-ran `tsc` — clean for masyarakat views.
+- Dev.log: tail shows only `✓ Compiled in 125–229ms` messages — no compile errors after each save of any masyarakat view file. Dev server healthy.
+
+Stage Summary:
+- Masyarakat (public) SPA views complete. 6 files under `src/components/views/masyarakat/`:
+  - `masyarakat-views.tsx` (orchestrator)
+  - `landing-view.tsx` (hero + stats + 18-category grid + how-it-works + risk legend + login CTA)
+  - `lapor-view.tsx` (4-section complaint form golden path)
+  - `track-view.tsx` (ticket lookup + timeline + 4-step pipeline)
+  - `transparency-view.tsx` (recharts Bar+Pie+Line + stat cards + kabupaten bars + risk distribution + privacy note)
+  - `login-view.tsx` (operator/pimpinan login with demo creds hint)
+- Lapor form enforces: ✅ max 5 photos (count check, rejects overflow with toast); ✅ max 1MB per photo (size check via `MAX_PHOTO_SIZE_MB * 1024 * 1024`, rejects with toast showing actual MB); ✅ NIK + Nama required when non-anonim (regex `/^[0-9]{16}$/` for NIK; "Nama wajib diisi" otherwise); ✅ GPS detection with manual fallback (`ManualLatLon` two number inputs always rendered; EmptyState on GPS error); ✅ anonymous toggle (Switch in gold-bordered box; helper text explains anonim hides from public dashboard only, not from operator).
+- Track view shows: ✅ vertical timeline (each entry color-coded by `type` — PROGRESS/VERIFY/ASSIGN/STATUS/ESCALATE — with Lucide icon, label pill, timeAgo, author name, note text); ✅ 4-step pipeline (Diterima→Diverifikasi→Diproses→Selesai horizontal stepper with current=gold, done=green-check, pending=muted, rejected=destructive alert).
+- Transparency view shows: ✅ recharts `BarChart` (byCategory top 8, gold bars), `PieChart` (byStatus donut, colors from REPORT_STATUSES), `LineChart` (last7Days, gold line) — all wrapped in `ResponsiveContainer` with mobile (220px) / desktop (300px) heights; ✅ custom horizontal bar list (byKabupaten top 10); ✅ risk distribution (4 mini cards with emoji + count + SLA label).
+- Login: posts to `/api/auth/login`, calls `setUser(result.user)` on success (store auto-routes), shows toast on 401, has demo credentials hint in collapsible `<details>` with "Isi otomatis" buttons for operator@jabar.go.id / operator123 + kasatpol@jabar.go.id / kasatpol123.
+- No issues with recharts/framer-motion APIs. recharts v2.15.4 exports `Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis` — all consumed without issue. framer-motion v12.23 `motion` + `whileInView`/`whileHover` work as documented. (Did NOT use `AnimatePresence` in orchestrator because `AppShell` already wraps children in `<AnimatePresence mode="wait"><motion.div key={view}>...</motion.div></AnimatePresence>` — adding another AnimatePresence would cause a visible double-fade on view swaps.)
+- The Lead can now write `src/app/page.tsx` as:
+  ```tsx
+  "use client";
+  import { AppBoot } from "@/components/shared/app-boot";
+  import { MasyarakatViews } from "@/components/views/masyarakat/masyarakat-views";
+  export default function Page() {
+    return <AppBoot><MasyarakatViews /></AppBoot>;
+  }
+  ```
+  (Operator/Pimpinan orchestrators from Tasks 5-b/5-c will be added conditionally based on `area`.)
+
+Files created (this task):
+- src/components/views/masyarakat/masyarakat-views.tsx
+- src/components/views/masyarakat/landing-view.tsx
+- src/components/views/masyarakat/lapor-view.tsx
+- src/components/views/masyarakat/track-view.tsx
+- src/components/views/masyarakat/transparency-view.tsx
+- src/components/views/masyarakat/login-view.tsx
+
+---
+Task ID: 5-b
+Agent: full-stack-developer (operator)
+Task: Build the Operator (Penatakelola) views for Yeuh Satpol! SPA — inbox (real-time polling), detail (verify/assign/AI/status/photosAfter/critical escalation), dashboard — wrapped by a single orchestrator
+
+Work Log:
+- Read prior worklog (Tasks 1, 1-amendments, 3, 4, 5-a) to confirm: dark Midnight Navy theme default with `.glass-card`, `.gold-shimmer`, `.critical-pulse`, `.custom-scroll` utilities; `useAppStore` Zustand store with `view/area/user/selectedReportId/setView/openReport/setUser` (setUser auto-routes area+view based on role); `apiFetch/apiUpload/ApiError` from `@/lib/api-client`; `timeAgo/slaTimeRemaining` from `@/lib/report-helpers`; constants `CATEGORIES/KABUPATEN_KOTA/BIDANG_LIST/RISK_LEVELS/REPORT_STATUSES/MAX_PHOTOS=5/MAX_PHOTO_SIZE_MB=1` from `@/lib/constants`; shared components `GlassCard, GoldShimmerText (as: span|h1|h2|h3), StatCard (accent: gold|blue|red|green|amber, label, value, icon?, sub?), CategoryIcon (code, className?), StatusBadge (status), RiskBadge (riskLevel), RoleBadge (role), MapPreview (latitude, longitude), Loading, LoadingSpinner, RowSkeleton, EmptyState (icon?, title, description?, action?)` all in `src/components/shared/*` (no barrel index).
+- Backend confirmed live via curl:
+  - `GET /api/operator/inbox?filter=&search=&sort=&page=&limit=` returns `{ reports: SerializedReport[], total, page, limit, counts: {all,unverified,inProgress,critical,overdue}, canSeePii }` — each report has parsed `photos: string[]`, `photosAfter: string[]`, and computed `slaRemaining: {ms,label,overdue}`. Full PII visible (reporterPhone, reporterNik, etc.). NOTE: the response does NOT include `avgResponseHours` (only `/api/operator/dashboard` does). My inbox view does not display avgResponseHours.
+  - `GET /api/operator/dashboard` returns `{ queueToday, unverified, inProgress, criticalActive, overdue, avgResponseHours, closeRate, slaCompliance }`. Verified live (queueToday=2, unverified=2, inProgress=5, criticalActive=2, overdue=6, avgResponseHours=0, closeRate=22, slaCompliance=100).
+  - `GET /api/reports/[id]` returns `{ report: SerializedReport }` with `progressNotes: [{id,note,type,createdAt,authorName}]` + parsed arrays + full PII.
+  - `PATCH /api/reports/[id]` body: `{ status?, riskLevel?, assignedBidangId?, assignedTo?, subCategory?, progressNote?, progressNoteType?, photosAfter? }` returns updated report. Verified live (PATCH with progressNote + progressNoteType="PROGRESS" → new note appended; PATCH with photosAfter:["/uploads/X.jpg"] → merged with existing + new PROGRESS note + AuditLog).
+  - `POST /api/ai/analyze-report` body: `{ description, category, address, kabupaten }` returns `{ suggestedRiskLevel, suggestedBidang (CODE like "TRANTIBUM"), suggestedPasal: string[], reasoning, source: "ai"|"heuristic" }`. Verified live — AI returns valid JSON with `source:"ai"`. Heuristic fallback only fires if LLM fails.
+  - `POST /api/reports/upload` multipart `file` (image jpeg/png/webp max 1MB) returns `{ url }`.
+  - `GET /api/auth/me` returns `{ user: SessionUser|null }`.
+- Did NOT modify: foundation files (`prisma/`, `src/lib/`, `src/store/`, `src/app/globals.css`, `src/app/layout.tsx`), shared UI components, existing backend API routes, `page.tsx`, other agents' view folders (masyarakat/pimpinan).
+- All 4 view files are `"use client"` under `src/components/views/operator/`. Hydration-safe: `window`/`navigator`/`URL.createObjectURL` accessed only inside `useEffect`/event handlers with `typeof window !== "undefined"` / direct `window.` reference inside non-SSR callbacks (the only `window.` call in operator-detail-view is inside `handleEscalateCritical` confirm dialog — runtime-only). Lazy initial state for browser-only values.
+- One new backend file added (NOT modifying existing Task 3 routes — supplement only): `src/app/api/bidangs/route.ts` — `GET` returns `{ bidangs: [{id,code,name,description,handles[]}] }` from db with merged handles metadata from `BIDANG_LIST` constant. Required because the PATCH endpoint looks up Bidang by db `id` (cuid) via `db.bidang.findUnique({ where: { id: body.assignedBidangId } })`, not by code, so the operator detail's "Assign ke Bidang" select needs the real database IDs. Auth guard: `getCurrentUser()` required (401 if not logged in; 200 for any logged-in user — operator/pimpinan both OK so Task 5-c pimpinan views can also consume it). Verified: operator=200, pimpinan=200, unauth=401.
+
+Files created (this task):
+
+1. `src/app/api/bidangs/route.ts` — New minimal endpoint (supplement to Task 3 backend; not a modification). Returns the 5 Bidang with real db ids + merged handles metadata from constants. Required so the operator detail view's "Assign ke Bidang" select can send real Bidang cuids to PATCH `/api/reports/[id]` (which looks up bidang by id, not by code).
+
+2. `src/components/views/operator/operator-views.tsx` — Orchestrator. Reads `view` from `useAppStore`. Switch on operator-area views: `operator-inbox`→OperatorInboxView, `operator-detail`→OperatorDetailView, `operator-dashboard`→OperatorDashboardView. Returns null for masyarakat-*/pimpinan-* views (Lead decides whether to mount this orchestrator based on `area`). Wrapper `<div className="pt-6 max-w-7xl mx-auto w-full px-4 sm:px-6">` (AppShell already wraps children in `motion.div key={view}` with AnimatePresence fade — no nested motion to avoid double-fade stutter). Guard: if `!user || user.role !== 'OPERATOR'` renders `<EmptyState icon={ShieldAlert} title="Akses ditolak" action="Kembali ke Beranda" → setView('home')>`.
+
+3. `src/components/views/operator/operator-inbox-view.tsx` — The operator inbox (real-time). Layout:
+   - **Top bar**: `<GoldShimmerText as="span">Inbox Laporan</GoldShimmerText>` + `<RoleBadge role={user?.role} />` + bidangName `<Badge>` + "Segarkan" `<Button variant="outline" size="sm">` with RefreshCw icon (animate-spin when refreshing) + "Terakhir diperbarui: timeAgo(lastUpdated)" line.
+   - **Quick stats strip**: 4 `<StatCard>`s — Antrian Hari Ini (gold/Inbox), Belum Diverifikasi (amber/AlertTriangle), Critical Aktif (red/AlertTriangle), Overdue (red/Timer) — populated from inbox `counts`.
+   - **Filter tabs** (shadcn `Tabs`): 5 tabs — Semua / Belum Diverifikasi / Diproses / Critical / Overdue. Each tab shows a `<Badge variant="secondary" className="h-4 px-1 text-[10px] font-mono">` count from `counts` (with the correct camelCase key per filter — `counts.inProgress` for Diproses). Clicking sets `filter` state → triggers re-fetch. Active tab gets `data-[state=active]:bg-jabar-gold/15 data-[state=active]:text-jabar-gold`. TabsList uses `flex-wrap` on mobile so all 5 fit on 390px.
+   - **Search input** (300ms debounce → debouncedSearch) with leading Search icon + sort `<Select>` (Terbaru/Terlama/Risiko tertinggi). Reset to page 1 on filter/search/sort change.
+   - **Report list**: vertical list of `InboxReportCard` sub-component (inline in same file). Each `<GlassCard>` has 4 rows:
+     - Row 1: ticketNumber (mono gold) + `<StatusBadge>` + `<RiskBadge>` + SLA timer inline-flex with Clock icon (red if `sla.overdue`, amber if remaining <25% of total SLA window, green otherwise; computed via `RISK_LEVELS[risk].slaHours` * 60 * 60 * 1000).
+     - Row 2: CategoryIcon in gold square + category name + subCategory (muted) + kabupaten (ml-auto).
+     - Row 3: description (line-clamp-2) + thumbnail of first photo (12×12) — falls back to ImageOff icon if no photos.
+     - Row 4: createdAt timeAgo + reporter name (or `<Badge>Anonim</Badge>` with UserRound icon if `isAnonymous`) + assignedBidangName + "Tinjau" gold button (`openReport(r.id)` → setView('operator-detail')).
+     - Critical cards: `border-l-4 border-l-red-500 critical-pulse` class for attention.
+   - Empty: `<EmptyState icon={Inbox} title="Tidak ada laporan" description=... action={Reset filter if filter/search active}>`.
+   - Loading: `<RowSkeleton count={5} />`.
+   - Pagination: "Muat Lebih Banyak" button if `total > page * PAGE_SIZE` (PAGE_SIZE=20); increments `page` → re-fetches (server returns next page of risk-sorted rows). Footer shows "Menampilkan X dari Y laporan".
+   - **Polling**: `useEffect` with `setInterval(() => fetchInbox({silent:true}), 15000)`. The fetchInbox function is wrapped in `React.useCallback([filter, debouncedSearch, sort, page, reports.length])` so its identity changes on filter/page/search change — the polling effect re-subscribes to a fresh interval each time (clears old one on cleanup). Silent re-fetches (no loading spinner, no error toasts) so the operator sees fresh data without losing scroll position. Manual "Segarkan" button also triggers fetchInbox.
+   - **Auth/401 handling**: on `ApiError.status===401`, set `sessionExpired=true` → render `<EmptyState icon={Clock} title="Sesi berakhir" action="Masuk lagi" → setView('login')>`. On 403, same path. Other errors show inline EmptyState + toast.
+
+4. `src/components/views/operator/operator-detail-view.tsx` — The verification + action view. Reads `selectedReportId` from store. If null → `<EmptyState icon={Search} title="Pilih laporan dari inbox" action="Buka Inbox">`. Fetch `/api/reports/[id]` + `/api/bidangs` (one-time). Layout (two-column on `lg:grid-cols-[1fr_minmax(360px,420px)]`, stacked on mobile):
+   - **LEFT (main)**:
+     - **Header card**: ticket (gold-shimmer mono) + StatusBadge + RiskBadge + createdAt timeAgo + SLA timer (red+bold if overdue) + assignedBidangName. Critical cards get `border-l-4 border-l-red-500 critical-pulse`.
+     - **Pelapor info card**: `<dl>` with PelaporRow sub-component (icon + label + value) for Nama (UserRound), No. HP (Phone), NIK (IdCard), Tempat/Tgl Lahir (Cake), Alamat (Home). If `isAnonymous`, show muted italic note: "Pelapor memilih anonim — identitas tersembunyi dari publik. Detail berikut tetap terlihat oleh petugas/operator untuk verifikasi." PII is still rendered because operators see PII per `serializeReport(r, "OPERATOR")`.
+     - **Detail**: category (CategoryIcon in gold square + name) + perdaRef pill + subCategory + alamat kejadian (address + kabupaten with MapPin) + description (full) + `<MapPreview>` (only when finite non-zero lat/lng).
+     - **Bukti foto**: thumbnail grid of `photos` (click → opens shadcn `Dialog` with full-size image; DialogTitle/Description are `sr-only` for a11y). Falls back to muted "Tidak ada foto bukti dilampirkan pelapor" if photos empty.
+     - **Timeline**: vertical `<ol>` with `before:` pseudo-element line; each entry has color-coded icon by `type` (PROGRESS=MessageSquare #3b82f6, VERIFY=Search #a855f7, ASSIGN=Send #0d47a1, STATUS=RefreshCw #f9a825, ESCALATE=AlertTriangle #ef4444) — same style as track-view for consistency. Note text supports `whitespace-pre-wrap`. Empty timeline → EmptyState "Belum ada catatan".
+   - **RIGHT (actions panel, sticky on `lg:`)**:
+     - **AI Suggestion card**: "Saran AI" header with Sparkles icon + "Analisis" outline button. Click → POST `/api/ai/analyze-report` with `{description, category, address, kabupaten}`. LoadingSpinner on button during request. On result: render `<RiskBadge riskLevel={aiResult.suggestedRiskLevel}>` + "Terap" ghost button (sets risk select), `<Badge>` with suggested bidang name (looked up by code in `bidangs` array) + "Terap" ghost button (sets bidang select), suggested pasal list (`<ul>` with bullets), reasoning text, `<Badge>` source tag (gold for "AI", muted for "Heuristic").
+     - **Verifikasi + Assign form**:
+       - Risk level `<Select>` (LOW/MEDIUM/HIGH/CRITICAL) with each item showing `emoji label · SLA Xj`. Selecting recalculates SLA client-side preview: shows "SLA: Xj Ym dari sekarang" or "Overdue Xm" computed from `report.createdAt + RISK_LEVELS[risk].slaHours - now`. Color: red if ≤0, muted otherwise.
+       - Assign ke Bidang `<Select>` populated from `bidangs` state (real db cuids). Placeholder "Memuat Bidang…" while fetching, "Pilih Bidang tujuan" when loaded.
+       - Sub-kategori `<Input>` (editable, pre-filled from report.subCategory).
+       - "Verifikasi & Teruskan" gold button → PATCH `/api/reports/[id]` with `{ status:'DIPROSES', riskLevel, assignedBidangId, subCategory, progressNote:'Laporan diverifikasi & diteruskan ke ${bidangName}.', progressNoteType:'ASSIGN' }`. On success: toast + updates local `report` state from PATCH response (no full refetch). Validates: risk + bidang must be picked.
+     - **Critical escalation (only when report.riskLevel==='CRITICAL')**: red `<Alert variant="destructive">` with ShieldAlert icon + title "Laporan Critical — eskalasi ke Kasatpol PP?" + description explaining SLA=1jam. Two buttons:
+       - "Eskalasi 1-Klik" destructive button → `window.confirm()` first → PATCH `{ status:'DIPROSES', riskLevel:'CRITICAL', progressNote:'ESKALASI: Laporan Critical diteruskan ke Kasatpol PP untuk penanganan segera.', progressNoteType:'ESCALATE' }`. On success: toast + local state updated (note appears in timeline as ESCALATE type).
+       - "Buka WhatsApp" `<a href={waUrl} target="_blank" rel="noopener noreferrer">` link — `wa.me/?text=` URL-encoded message: "🚨 LAPORAN CRITICAL\nTiket: {ticket}\nKategori: {categoryName}\nLokasi: {address}\nMaps: https://www.google.com/maps?q={lat},{lng}\nSLA: 1 jam".
+       - Read-only `<Textarea>` showing the preview of the WhatsApp message (font-mono, monospace).
+     - **Update status section**:
+       - Status `<Select>` (DITERIMA/DIVERIFIKASI/DIPROSES/SELESAI/DITOLAK) pre-filled with report.status.
+       - Catatan progress `<Textarea>`.
+       - "Update Status" outline button → PATCH `{ status, progressNote: note.trim() || undefined, progressNoteType:'STATUS' }`. On success: toast + local state updated + clear note input.
+       - Foto penanganan upload: native `<input type="file" accept="image/jpeg,image/png,image/webp">` styled with Tailwind file: classes (gold-themed). On change: client-side size/type validation (max 1MB, must be jpeg/png/webp) → toast error on violation. Otherwise: `apiUpload('/api/reports/upload', fd)` to get url → PATCH `{ photosAfter: [url], progressNote:'Foto penanganan ditambahkan: ${filename}', progressNoteType:'PROGRESS' }`. Backend merges url into existing photosAfterJson (de-duped, sliced to 10). Existing photosAfter thumbnails shown in 4-col grid below; click → opens same Dialog as bukti foto.
+   - All mutations share a `patchReport(body)` helper that sets loading flags + handles ApiError (401 → sessionExpired CTA, else toast). PATCH response is fed back into local `report` state (no full refetch needed) — and the form's riskLevel/bidangId/subCategory/newStatus are re-synced from the response so the UI reflects what the server stored.
+   - **Photo dialog**: shadcn `Dialog` with full-size image; reused by both bukti foto and foto penanganan thumbnails.
+
+5. `src/components/views/operator/operator-dashboard-view.tsx` — Mini operator dashboard. Fetch `/api/operator/dashboard` + `/api/reports?limit=5&sort=newest` (best-effort, recent activity list optional). Layout:
+   - **Header**: `<GoldShimmerText as="span">Dashboard Operator</GoldShimmerText>` + subtitle.
+   - **6 `<StatCard>`s grid** (2 cols mobile, 3 cols sm+): Antrian Hari Ini (gold/Inbox), Belum Diverifikasi (amber/AlertTriangle), Diproses (blue/Activity), Critical Aktif (red/AlertTriangle), Overdue (red/Timer), Close Rate % (green/TrendingUp).
+   - **Response time + SLA compliance**: 2-col grid of GlassCards. Response time shows `avgResponseHours` + " jam" suffix (or "—" if 0). SLA compliance shows `slaCompliance` + " %" + `<Progress value={slaCompliance}>` bar + color (green ≥80, amber ≥60, red <60).
+   - **Buka Inbox CTA**: GlassCard with description + gold "Buka Inbox" button (`setView('operator-inbox')`).
+   - **Recent activity** (if recent reports returned): vertical `<ul>` of last 5 reports — each GlassCard with Clock icon + ticketNumber (mono gold) + StatusBadge + RiskBadge + category/kabupaten/timeAgo/SLA inline + "Tinjau" ghost button (`openReport(r.id)`). Top right has "Lihat semua" ghost button → `setView('operator-inbox')`.
+   - **Auth/401 handling**: on 401 → sessionExpired EmptyState with "Masuk lagi" CTA. Other errors → EmptyState with "Buka Inbox" fallback CTA.
+
+Lint + Type Check:
+- `bun run lint` clean (0 errors, 0 warnings) across the whole project. Initial run flagged 1 unused `eslint-disable` directive (`react-hooks/exhaustive-deps` in inbox-view useEffect) — fixed by removing the comment and adding `fetchInbox` to the dep array (which is exactly what the rule wanted — the effect depends on the callback).
+- `bunx tsc --noEmit --skipLibCheck` reports **0 errors in any of my new files** (`src/components/views/operator/*` and `src/app/api/bidangs/route.ts`). Errors elsewhere (`src/app/api/operator/inbox/route.ts` `where.AND` unknown, `src/app/api/reports/route.ts` `created: null` Prisma typing, `src/components/shared/category-icon.tsx` "no exported member 'Road'") are pre-existing from Tasks 3 and 4 — not my files. The `Road` import works at runtime because lucide-react v0.525 has `Road` despite the .d.ts being incomplete.
+- Dev.log: tail shows `✓ Compiled in 125–268ms` repeatedly with **no errors**. Curl tests:
+  - `GET /api/bidangs` → 401 (unauth, correct), 200 (operator), 200 (pimpinan).
+  - `GET /api/operator/inbox?filter=all&page=1&limit=5` → 200 with 5 reports + counts `{all:9, unverified:2, inProgress:5, critical:2, overdue:6}` + canSeePii:true.
+  - `GET /api/operator/dashboard` → 200 with full KPI object.
+  - `POST /api/ai/analyze-report` → 200 with `{suggestedRiskLevel:"CRITICAL", suggestedBidang:"TRANTIBUM", suggestedPasal:[3 items], reasoning:"...", source:"ai"}`.
+  - `PATCH /api/reports/[id]` with `{progressNote, progressNoteType}` → 200, new ProgressNote appended (verified via response.progressNotes). PATCH with `{photosAfter:["/uploads/X.jpg"], progressNote, progressNoteType}` → 200, url merged into photosAfter + new PROGRESS note. PATCH with `{status, riskLevel, assignedBidangId, subCategory, progressNote, progressNoteType:"ASSIGN"}` is the verify-and-forward flow — same endpoint, same response shape.
+
+Stage Summary:
+- Operator (Penatakelola) SPA views complete. 5 files (4 view components + 1 new backend supplement):
+  - `src/app/api/bidangs/route.ts` (new GET endpoint; auth-required; returns 5 bidangs with real db ids + handles metadata)
+  - `src/components/views/operator/operator-views.tsx` (orchestrator with OPERATOR role guard)
+  - `src/components/views/operator/operator-inbox-view.tsx` (15s polling + 5 filter tabs w/ live counts + search + sort + SLA timer + pagination)
+  - `src/components/views/operator/operator-detail-view.tsx` (AI suggestion + verify/assign form with SLA preview + status update + photosAfter upload + critical escalation with WhatsApp link + photo dialog + progress notes timeline)
+  - `src/components/views/operator/operator-dashboard-view.tsx` (6 stat cards + response time + SLA compliance Progress bar + inbox CTA + recent activity list)
+- Inbox has: ✅ 15-second polling via `setInterval` + `useEffect` (clears on unmount and re-subscribes when filter/search/sort/page changes); ✅ 5 filter tabs (Semua/Belum Diverifikasi/Diproses/Critical/Overdue) each with `<Badge>` count from `counts`; ✅ SLA timer per card (red overdue, amber <25% remaining, green otherwise, computed from `RISK_LEVELS[risk].slaHours`); ✅ "Segarkan" button + "Terakhir diperbarui: timeAgo(lastUpdated)".
+- Detail view has: ✅ AI suggestion button → POST `/api/ai/analyze-report` with full report context; ✅ result display with RiskBadge + bidang name (looked up by code) + pasal list + reasoning + source badge; ✅ "Terap Saran" buttons that pre-fill risk + bidang selects; ✅ risk select with SLA preview ("SLA: Xj Ym dari sekarang"); ✅ "Verifikasi & Teruskan" PATCH with `{status:'DIPROSES', riskLevel, assignedBidangId, subCategory, progressNote, progressNoteType:'ASSIGN'}`; ✅ status select + catatan progress textarea + "Update Status" PATCH with `{status, progressNote, progressNoteType:'STATUS'}`; ✅ photo penanganan upload via `/api/reports/upload` then PATCH with `photosAfter:[url]` (backend merges with existing, max 10); ✅ existing photosAfter thumbnails shown in 4-col grid; ✅ critical-only escalation alert with "Eskalasi 1-Klik" PATCH + "Buka WhatsApp" wa.me link with encoded message + read-only Textarea preview; ✅ progress notes timeline at bottom (color-coded icons by type — PROGRESS/VERIFY/ASSIGN/STATUS/ESCALATE).
+- Dashboard has: ✅ 6 StatCards (Antrian Hari Ini, Belum Diverifikasi, Diproses, Critical Aktif, Overdue, Close Rate %) with accent colors (gold/amber/blue/red/red/green); ✅ Rata-rata Response Time card (avgResponseHours + " jam"); ✅ SLA Compliance card with Progress bar (color-coded green/amber/red by threshold); ✅ "Buka Inbox" CTA → setView('operator-inbox'); ✅ recent activity list (last 5 reports via `/api/reports?limit=5&sort=newest`) with inline ticket + status + risk + category + timeAgo + "Tinjau" button.
+- Toast feedback on every mutation (sonner `toast.success` / `toast.error`). LoadingSpinner on action buttons during requests. Hydration-safe (no `window`/`navigator` at module/render top-level — only in `useEffect`/handlers). Mobile-first (390px): tabs wrap, search/sort stack, two-column detail collapses to single column on mobile, sticky panel becomes static below main content.
+- The Lead can now write `src/app/page.tsx` as:
+  ```tsx
+  "use client";
+  import { AppBoot } from "@/components/shared/app-boot";
+  import { MasyarakatViews } from "@/components/views/masyarakat/masyarakat-views";
+  import { OperatorViews } from "@/components/views/operator/operator-views";
+  export default function Page() {
+    return (
+      <AppBoot>
+        <MasyarakatViews />
+        <OperatorViews />
+      </AppBoot>
+    );
+  }
+  ```
+  (Pimpinan orchestrator from Task 5-c will be added similarly. Each orchestrator returns null for views outside its area, so mounting all three simultaneously is safe.)
+
+Files created (this task):
+- src/app/api/bidangs/route.ts
+- src/components/views/operator/operator-views.tsx
+- src/components/views/operator/operator-inbox-view.tsx
+- src/components/views/operator/operator-detail-view.tsx
+- src/components/views/operator/operator-dashboard-view.tsx

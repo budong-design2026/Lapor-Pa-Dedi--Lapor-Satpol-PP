@@ -1,0 +1,33 @@
+{
+  "version": "yeuh-satpol-v1",
+  "app": { "name": "Yeuh Pa Dedi, yeuh SatpolPP Jabar, aya pelanggaran !!!", "shortName": "Yeuh Satpol!", "tagline": "Aplikasi Pengaduan Trantibumlinmas Masyarakat Jawa Barat" },
+  "categories": [
+    { "code": "TATA_RUANG", "name": "Tertib Tata Ruang" },
+    { "code": "JALAN", "name": "Tertib Jalan" },
+    { "code": "PERHUBUNGAN", "name": "Tertib Perhubungan" },
+    { "code": "SUNGAI", "name": "Tertib Sungai, Irigasi, Situ & Pinggir Pantai" },
+    { "code": "LINGKUNGAN", "name": "Tertib Lingkungan" },
+    { "code": "TEMPAT_USAHA", "name": "Tertib Tempat Usaha" },
+    { "code": "BANGUNAN", "name": "Tertib Bangunan" },
+    { "code": "SOSIAL", "name": "Tertib Sosial" },
+    { "code": "KESEHATAN", "name": "Tertib Kesehatan" },
+    { "code": "BENCANA", "name": "Tertib Keadaan Bencana" },
+    { "code": "KAWASAN_STRATEGIS", "name": "Tertib Kawasan Strategis Provinsi" },
+    { "code": "KEHUTANAN", "name": "Tertib Kehutanan" },
+    { "code": "PERIKANAN", "name": "Tertib Pengelolaan Perikanan" },
+    { "code": "ESDM", "name": "Tertib Energi & Sumber Daya Mineral" },
+    { "code": "ASET", "name": "Tertib Aset" },
+    { "code": "ASN", "name": "Tertib Aparatur Sipil Negara (ASN)" },
+    { "code": "PERIZINAN", "name": "Tertib Perizinan" },
+    { "code": "LAINNYA", "name": "Lainnya / Pengaduan Khusus" }
+  ],
+  "bidang": [
+    { "code": "SEKRETARIAT", "name": "Sekretariat" },
+    { "code": "PENEGAKAN_PERDA", "name": "Bidang Penegakan Perda dan Perkada" },
+    { "code": "TRANTIBUM", "name": "Bidang Trantibum" },
+    { "code": "PEMBINAAN_MASYARAKAT", "name": "Bidang Pembinaan Masyarakat dan Aparatur" },
+    { "code": "PERLINDUNGAN_MASYARAKAT", "name": "Bidang Perlindungan Masyarakat" }
+  ],
+  "riskLevels": { "CRITICAL": { "slaHours": 1 }, "HIGH": { "slaHours": 4 }, "MEDIUM": { "slaHours": 24 }, "LOW": { "slaHours": 72 } },
+  "legalBasis": "Perda No. 13 Tahun 2018 jo. Perda No. 5 Tahun 2021"
+}

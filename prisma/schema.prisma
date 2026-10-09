@@ -1,0 +1,120 @@
+// Prisma schema — Yeuh Satpol! Pengaduan Trantibumlinmas Jabar
+// SQLite-compatible: arrays stored as JSON string fields, parsed in code.
+// NOTE: App uses raw libsql (src/lib/db-raw.ts) for DB access on Vercel.
+// This schema is for reference/local dev only.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  password      String
+  name          String
+  phone         String?
+  role          String   @default("MASYARAKAT")
+  bidangId      String?
+  nik           String?
+  birthPlace    String?
+  birthDate     String?
+  address       String?
+  points        Int      @default(0)
+  badgesJson    String   @default("[]")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([role])
+}
+
+model Bidang {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+}
+
+model Report {
+  id            String   @id @default(cuid())
+  ticketNumber  String   @unique
+  reporterId    String?
+  isAnonymous   Boolean  @default(false)
+  reporterName  String
+  reporterPhone String?
+  reporterNik   String?
+  reporterBirthPlace String?
+  reporterBirthDate  String?
+  reporterAddress    String?
+  category      String
+  subCategory   String?
+  description   String
+  address       String
+  latitude      Float
+  longitude     Float
+  kabupaten     String
+  photosJson        String   @default("[]")
+  videosJson        String   @default("[]")
+  voiceTranscript   String?
+  status        String   @default("DITERIMA")
+  riskLevel     String?
+  assignedBidangId String?
+  assignedTo   String?
+  slaDeadline  DateTime?
+  aiSuggestedRisk    String?
+  aiSuggestedBidang  String?
+  aiSuggestedPasal   String?
+  aiReasoning        String?
+  createdAt     DateTime @default(now())
+  verifiedAt    DateTime?
+  assignedAt    DateTime?
+  inProgressAt  DateTime?
+  resolvedAt    DateTime?
+  photosAfterJson String @default("[]")
+
+  @@index([status, riskLevel])
+  @@index([kabupaten])
+  @@index([createdAt])
+  @@index([assignedBidangId])
+}
+
+model ProgressNote {
+  id        String   @id @default(cuid())
+  reportId  String
+  userId    String
+  note      String
+  type      String   @default("PROGRESS")
+  createdAt DateTime @default(now())
+
+  @@index([reportId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String?
+  role      String?
+  title     String
+  message   String
+  type      String   @default("INFO")
+  reportId  String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  reportId  String?
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
