@@ -103,6 +103,20 @@ export function SiteHeader() {
                 <span className="sr-only">Ganti Password</span>
               </Button>
 
+              {/* Mobile: icon-only Keluar shortcut */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handleLogout}
+                disabled={busy}
+                className="h-9 w-9 sm:hidden"
+                aria-label="Keluar"
+              >
+                <LogOut className="h-4 w-4" aria-hidden />
+                <span className="sr-only">Keluar</span>
+              </Button>
+
               <div className="hidden sm:flex items-center gap-2">
                 <RoleBadge role={user?.role} />
                 {user?.bidangName ? (
