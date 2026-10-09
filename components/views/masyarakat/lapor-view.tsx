@@ -55,6 +55,28 @@ import { apiFetch, apiUpload, ApiError } from "@/lib/api-client";
 // validasi (toast "Maksimal X foto", label "0/X foto dipilih", cek ukuran
 // per file, cek sisa slot) membaca dari konstanta supaya konsisten.
 const MAX_BYTES = MAX_PHOTO_SIZE_MB * 1024 * 1024;
+
+// Auto-compress: resize to max 1280px + JPEG quality 0.75 → ~200-400KB regardless of original
+async function compressImage(file: File, maxDim = 1280, quality = 0.75): Promise<File> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > maxDim) { h = Math.round((h * maxDim) / w); w = maxDim; }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { resolve(file); return; }
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob((blob) => {
+        if (!blob) { resolve(file); return; }
+        resolve(new File([blob], file.name.replace(/\.(png|webp)$/i, ".jpg"), { type: "image/jpeg" }));
+      }, "image/jpeg", quality);
+    };
+    img.onerror = () => resolve(file);
+    img.src = URL.createObjectURL(file);
+  });
+}
 const DESC_MIN = 20;
 const NIK_PATTERN = /^[0-9]{16}$/;
 
@@ -157,15 +179,16 @@ export function LaporView() {
         toast.error(`${file.name}: hanya file gambar`);
         continue;
       }
-      if (file.size > MAX_BYTES) {
+      const compressed = await compressImage(file);
+      if (compressed.size > MAX_BYTES) {
         toast.error(
-          `${file.name}: melebihi ${MAX_PHOTO_SIZE_MB}MB (ukuran ${(file.size / 1024 / 1024).toFixed(2)}MB)`
+          `${file.name}: melebihi ${MAX_PHOTO_SIZE_MB}MB setelah kompresi (ukuran ${(compressed.size / 1024 / 1024).toFixed(2)}MB)`
         );
         continue;
       }
       accepted.push({
         id: `${file.name}-${file.size}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        file,
+        file: compressed,
         previewUrl: URL.createObjectURL(file),
         status: "queued",
       });
