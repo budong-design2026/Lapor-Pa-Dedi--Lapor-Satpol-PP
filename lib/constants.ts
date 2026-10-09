@@ -271,5 +271,5 @@ export const LEGAL_BASIS = "Perda No. 13 Tahun 2018 jo. Perda No. 5 Tahun 2021";
 
 // File upload limits (dilonggarkan: 3 foto × 2MB — warga HP gampang upload)
 export const MAX_PHOTOS = 3;
-export const MAX_PHOTO_SIZE_MB = 2;
+export const MAX_PHOTO_SIZE_MB = 4;
 export const MAX_VIDEO_SIZE_MB = 5;
