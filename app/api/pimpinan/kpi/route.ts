@@ -1,67 +1,79 @@
-// /api/pimpinan/kpi — auth PIMPINAN. Per-bidang KPI matrix.
+// /api/pimpinan/kpi — GET KPI per Bidang (raw libsql).
+// Auth: pimpinan only.
+// Per Bidang: activeReports, resolvedThisMonth, avgResponseHours, closeRate, slaCompliance.
 import { NextResponse } from "next/server";
+import { getCurrentUser } from "@/lib/auth";
 import {
-  raw,
-  ensureTables,
   getBidangs,
   countReportsWhereArgs,
   avgResponseHoursBidang,
+  countReportsByBidang,
 } from "@/lib/db-raw";
-import { getCurrentUser } from "@/lib/auth";
-import { isPimpinan } from "@/lib/api-helpers";
 
 export async function GET() {
   try {
-    await ensureTables();
-    const session = await getCurrentUser();
-    if (!session || !isPimpinan(session.role)) {
-      return NextResponse.json({ error: "Akses ditolak. Login sebagai pimpinan." }, { status: 403 });
+    const u = await getCurrentUser();
+    if (!u || !u.role.startsWith("PIMPINAN")) {
+      return NextResponse.json(
+        { error: "Unauthorized — silakan login" },
+        { status: 401 }
+      );
     }
+
     const bidangs = await getBidangs();
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
+    const monthStart = new Date(Date.UTC(
+      new Date().getUTCFullYear(),
+      new Date().getUTCMonth(),
+      1
+    )).toISOString();
 
     const kpi = await Promise.all(
       bidangs.map(async (b) => {
         const activeReports = await countReportsWhereArgs(
-          `"assignedBidangId"=? AND "status" IN (?,?,?)`,
-          [String(b.id), "DITERIMA", "DIVERIFIKASI", "DIPROSES"]
+          `"assignedBidangId" = ? AND "status" IN ('DITERIMA','DIVERIFIKASI','DIPROSES')`,
+          [b.id]
         );
         const resolvedThisMonth = await countReportsWhereArgs(
-          `"assignedBidangId"=? AND "status"=? AND "resolvedAt" IS NOT NULL AND "resolvedAt" >= ?`,
-          [String(b.id), "SELESAI", monthStart.toISOString()]
+          `"assignedBidangId" = ? AND "status" = 'SELESAI' AND "resolvedAt" >= ?`,
+          [b.id, monthStart]
         );
-        const avgResp = await avgResponseHoursBidang(String(b.id));
-        const totalAssigned = await countReportsWhereArgs(`"assignedBidangId"=?`, [String(b.id)]);
-        const completed = await countReportsWhereArgs(
-          `"assignedBidangId"=? AND "status"=?`,
-          [String(b.id), "SELESAI"]
+        const total = await countReportsByBidang(b.id);
+        const resolvedAll = await countReportsWhereArgs(
+          `"assignedBidangId" = ? AND "status" = 'SELESAI' AND "resolvedAt" IS NOT NULL`,
+          [b.id]
         );
-        const closeRate = totalAssigned > 0 ? Math.round((completed / totalAssigned) * 100) : 0;
-        const resolvedOnTime = await countReportsWhereArgs(
-          `"assignedBidangId"=? AND "status"=? AND "slaDeadline" IS NOT NULL AND "resolvedAt" IS NOT NULL AND "resolvedAt" <= "slaDeadline"`,
-          [String(b.id), "SELESAI"]
+        const withDeadline = await countReportsWhereArgs(
+          `"assignedBidangId" = ? AND "slaDeadline" IS NOT NULL AND "status" IN ('SELESAI','DITOLAK') AND "resolvedAt" IS NOT NULL`,
+          [b.id]
         );
-        const slaCompliance = completed > 0 ? Math.round((resolvedOnTime / completed) * 100) : 100;
+        const slaMet = await countReportsWhereArgs(
+          `"assignedBidangId" = ? AND "slaDeadline" IS NOT NULL AND "status" IN ('SELESAI','DITOLAK') AND "resolvedAt" IS NOT NULL AND "resolvedAt" <= "slaDeadline"`,
+          [b.id]
+        );
+
+        const avg = await avgResponseHoursBidang(b.id);
+        const closeRate = total > 0 ? Math.round((resolvedAll / total) * 100) : 0;
+        const slaCompliance =
+          withDeadline > 0 ? Math.round((slaMet / withDeadline) * 100) : 100;
+
         return {
-          bidangId: String(b.id),
-          bidangCode: String(b.code),
-          bidangName: String(b.name),
+          bidangId: b.id,
+          bidangCode: b.code,
+          bidangName: b.name,
           activeReports,
           resolvedThisMonth,
-          avgResponseHours: Math.round(avgResp * 10) / 10,
+          avgResponseHours: Number(avg.toFixed(2)),
           closeRate,
           slaCompliance,
         };
       })
     );
-    // Raw query count helper not needed here, but keep import reference clean
-    void raw;
+
     return NextResponse.json({ kpi });
-  } catch (err) {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json(
-      { error: "Gagal memuat KPI pimpinan", detail: String((err as Error)?.message ?? err) },
+      { error: "Gagal memuat KPI bidang", detail: msg.slice(0, 200) },
       { status: 500 }
     );
   }

@@ -1,48 +1,87 @@
-// /api/operator/dashboard — auth OPERATOR. Quick counts for dashboard widgets.
+// /api/operator/dashboard — GET operator mini dashboard (raw libsql).
+// Auth: OPERATOR only.
+// Counts: queueToday, unverified, inProgress, criticalActive, overdue,
+// avgResponseHours, closeRate, slaCompliance.
 import { NextResponse } from "next/server";
-import {
-  ensureTables,
-  countReportsWhereArgs,
-  countReports,
-  avgResponseHours,
-  getCriticalActive,
-} from "@/lib/db-raw";
 import { getCurrentUser } from "@/lib/auth";
-import { isStaff } from "@/lib/api-helpers";
-
-const ACTIVE_STATUSES = ["DITERIMA", "DIVERIFIKASI", "DIPROSES"];
+import {
+  raw,
+  countReportsWhere,
+  countReports,
+} from "@/lib/db-raw";
 
 export async function GET() {
   try {
-    await ensureTables();
-    const session = await getCurrentUser();
-    if (!session || !isStaff(session.role)) {
-      return NextResponse.json({ error: "Akses ditolak. Login sebagai staff." }, { status: 403 });
+    const u = await getCurrentUser();
+    if (!u) {
+      return NextResponse.json(
+        { error: "Unauthorized — silakan login" },
+        { status: 401 }
+      );
     }
-    if (session.role !== "OPERATOR") {
-      // Pimpinan can also call this — but spec says auth OPERATOR. Allow PIMPINAN too for convenience.
+    if (u.role !== "OPERATOR") {
+      return NextResponse.json(
+        { error: "Akses khusus Operator" },
+        { status: 403 }
+      );
     }
 
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const queueToday = await countReportsWhereArgs(`"createdAt" >= ?`, [todayStart.toISOString()]);
-    const unverified = await countReportsWhereArgs(`"status" = ?`, ["DITERIMA"]);
-    const inProgress = await countReportsWhereArgs(`"status" IN (?,?)`, ["DIVERIFIKASI", "DIPROSES"]);
-    const criticalActive = (await getCriticalActive()).length;
-    const overdue = await countReportsWhereArgs(
-      `"slaDeadline" IS NOT NULL AND "slaDeadline" < datetime('now') AND "status" IN (?,?,?)`,
-      ACTIVE_STATUSES
+    const now = new Date();
+    const todayStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    ).toISOString();
+    const monthStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)
+    ).toISOString();
+
+    const [queueToday, unverified, inProgress, criticalActive, overdue, totalAll, totalResolved] =
+      await Promise.all([
+        // createdAt >= today (start of UTC day)
+        countReportsWhere(`"createdAt" >= '${todayStart}'`),
+        countReportsWhere(`"status" = 'DITERIMA'`),
+        countReportsWhere(`"status" IN ('DIVERIFIKASI','DIPROSES')`),
+        countReportsWhere(
+          `"riskLevel" = 'CRITICAL' AND "status" IN ('DITERIMA','DIVERIFIKASI','DIPROSES')`
+        ),
+        // overdue: deadline in the past AND not SELESAI/DITOLAK
+        countReportsWhere(
+          `"slaDeadline" IS NOT NULL AND "slaDeadline" < datetime('now') AND "status" NOT IN ('SELESAI','DITOLAK')`
+        ),
+        countReports(),
+        countReportsWhere(`"status" = 'SELESAI'`),
+      ]);
+
+    // SLA compliance: of all resolved/rejected reports with a deadline, % met
+    const slaTotalRes = await raw().execute({
+      sql: `SELECT COUNT(*) as c FROM "Report"
+            WHERE "slaDeadline" IS NOT NULL
+              AND "status" IN ('SELESAI','DITOLAK')
+              AND "resolvedAt" IS NOT NULL`,
+    });
+    const slaTotal = Number((slaTotalRes.rows[0] as Record<string, unknown>)?.c ?? 0);
+    const slaMetRes = await raw().execute({
+      sql: `SELECT COUNT(*) as c FROM "Report"
+            WHERE "slaDeadline" IS NOT NULL
+              AND "status" IN ('SELESAI','DITOLAK')
+              AND "resolvedAt" IS NOT NULL
+              AND "resolvedAt" <= "slaDeadline"`,
+    });
+    const slaMet = Number((slaMetRes.rows[0] as Record<string, unknown>)?.c ?? 0);
+    const slaCompliance = slaTotal > 0 ? Math.round((slaMet / slaTotal) * 100) : 100;
+
+    // Avg response hours (this month's resolved reports)
+    const resolvedThisMonthRes = await raw().execute({
+      sql: `SELECT AVG((julianday("resolvedAt") - julianday("createdAt")) * 24) as a
+            FROM "Report"
+            WHERE "status" = 'SELESAI' AND "resolvedAt" >= ?`,
+      args: [monthStart],
+    });
+    const avgHours = Number(
+      (resolvedThisMonthRes.rows[0] as Record<string, unknown>)?.a ?? 0
     );
-    const avgResp = await avgResponseHours();
-    const totalReports = await countReports();
-    const completed = await countReportsWhereArgs(`"status" = ?`, ["SELESAI"]);
-    const closeRate = totalReports > 0 ? Math.round((completed / totalReports) * 100) : 0;
-    // SLA compliance: of resolved reports, % whose resolvedAt <= slaDeadline
-    const resolvedOnTime = await countReportsWhereArgs(
-      `"status" = ? AND "slaDeadline" IS NOT NULL AND "resolvedAt" IS NOT NULL AND "resolvedAt" <= "slaDeadline"`,
-      ["SELESAI"]
-    );
-    const slaCompliance = completed > 0 ? Math.round((resolvedOnTime / completed) * 100) : 100;
+
+    // closeRate = % SELESAI of all reports
+    const closeRate = totalAll > 0 ? Math.round((totalResolved / totalAll) * 100) : 0;
 
     return NextResponse.json({
       queueToday,
@@ -50,15 +89,14 @@ export async function GET() {
       inProgress,
       criticalActive,
       overdue,
-      avgResponseHours: Math.round(avgResp * 10) / 10,
+      avgResponseHours: Number(avgHours.toFixed(2)),
       closeRate,
       slaCompliance,
-      totalReports,
-      completed,
     });
-  } catch (err) {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json(
-      { error: "Gagal memuat dashboard operator", detail: String((err as Error)?.message ?? err) },
+      { error: "Gagal memuat dashboard operator", detail: msg.slice(0, 200) },
       { status: 500 }
     );
   }

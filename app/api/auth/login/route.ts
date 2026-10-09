@@ -1,58 +1,63 @@
-// /api/auth/login — email + password login
+// /api/auth/login — Verify password via raw libsql (bypass Prlesia).
 import { NextResponse } from "next/server";
 import {
   getUserByEmail,
-  getBidangById,
-  ensureTables,
+  verifyPassword,
+  getBidangByCode,
+  raw,
 } from "@/lib/db-raw";
-import { verifyPassword, setSessionCookie, signToken } from "@/lib/auth";
+import { signToken, setSessionCookie } from "@/lib/auth";
 
 export async function POST(req: Request) {
   try {
-    await ensureTables();
-    const body = await req.json().catch(() => ({}));
-    const { email, password } = body as Record<string, string | undefined>;
+    const { email, password } = await req.json();
     if (!email || !password) {
-      return NextResponse.json({ error: "Email dan password wajib diisi" }, { status: 400 });
+      return NextResponse.json({ error: "Email & password wajib" }, { status: 400 });
     }
-    const user = await getUserByEmail(String(email).toLowerCase());
-    if (!user) {
-      return NextResponse.json({ error: "Email atau password salah" }, { status: 401 });
-    }
-    const ok = verifyPassword(String(password), String(user.password));
-    if (!ok) {
-      return NextResponse.json({ error: "Email atau password salah" }, { status: 401 });
+
+    const user = await getUserByEmail(String(email).trim().toLowerCase());
+    if (!user || !verifyPassword(String(password), user.password)) {
+      return NextResponse.json(
+        { error: "Email atau password salah" },
+        { status: 401 }
+      );
     }
 
     let bidangName: string | null = null;
     if (user.bidangId) {
-      const b = await getBidangById(String(user.bidangId));
-      bidangName = b ? String(b.name) : null;
+      const res = await raw().execute({
+        sql: `SELECT * FROM "Bidang" WHERE "id" = ? OR "code" = ? LIMIT 1`,
+        args: [user.bidangId, user.bidangId],
+      });
+      if (res.rows[0]) {
+        bidangName = String((res.rows[0] as Record<string, unknown>).name);
+      } else {
+        const byCode = await getBidangByCode(user.bidangId);
+        if (byCode) bidangName = byCode.name;
+      }
     }
 
     const token = signToken({
-      sub: String(user.id),
-      email: String(user.email),
-      name: String(user.name),
-      role: String(user.role),
-      bidangId: user.bidangId ? String(user.bidangId) : null,
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      bidangId: user.bidangId,
+      name: user.name,
     });
     await setSessionCookie(token);
 
     return NextResponse.json({
       user: {
-        id: String(user.id),
-        email: String(user.email),
-        name: String(user.name),
-        role: String(user.role),
-        bidangId: user.bidangId ?? null,
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        bidangId: user.bidangId,
         bidangName,
       },
     });
-  } catch (err) {
-    return NextResponse.json(
-      { error: "Gagal login", detail: String((err as Error)?.message ?? err) },
-      { status: 500 }
-    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: "Login gagal", detail: msg }, { status: 500 });
   }
 }

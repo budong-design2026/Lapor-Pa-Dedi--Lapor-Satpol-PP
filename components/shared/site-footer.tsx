@@ -1,88 +1,91 @@
 "use client";
 
 import * as React from "react";
-import { Zap } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
-  APP_NAME,
+  APP_SHORT,
   SATPOL_TASKS,
   LEGAL_BASIS,
   TRADEMARK,
 } from "@/lib/constants";
 import { useAppStore, type ViewKey } from "@/store/app-store";
 
-/**
- * SiteFooter — sticky-at-bottom footer with 3 columns.
- * Col1: copyright + SATPOL_TASKS + LEGAL_BASIS.
- * Col2: quick links (Beranda/Lapor/Lacak/Transparansi).
- * Col3: gold "Budong_production2026" badge with glow.
- */
-const QUICK_LINKS: { label: string; view: ViewKey }[] = [
+interface QuickLink {
+  label: string;
+  view: ViewKey;
+}
+
+const QUICK_LINKS: QuickLink[] = [
   { label: "Beranda", view: "home" },
   { label: "Lapor", view: "lapor" },
   { label: "Lacak", view: "track" },
   { label: "Transparansi", view: "transparency" },
 ];
 
+/**
+ * SiteFooter — sticky footer with mt-auto.
+ * Three columns on desktop, stacked on mobile.
+ * Bottom safe-area inset reserved for iOS.
+ */
 export function SiteFooter() {
   const setView = useAppStore((s) => s.setView);
+  const year = 2026;
 
   return (
     <footer
-      className="mt-auto border-t border-white/10 bg-background/60 backdrop-blur-md"
       role="contentinfo"
+      className="mt-auto w-full border-t border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 pb-[env(safe-area-inset-bottom)]"
     >
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 pb-[env(safe-area-inset-bottom)]">
-        <div className="grid gap-6 md:grid-cols-3">
-          {/* Col 1 */}
-          <section className="space-y-2">
-            <h2 className="text-sm font-bold text-foreground">
-              Satpol PP Provinsi Jawa Barat
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              &copy; 2026 Satpol PP Provinsi Jawa Barat. {APP_NAME}
-            </p>
-            <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-              <span className="font-semibold text-foreground/90">Tugas: </span>
-              {SATPOL_TASKS}.
-            </p>
-            <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-              <span className="font-semibold text-foreground/90">Dasar Hukum: </span>
-              {LEGAL_BASIS}.
-            </p>
-          </section>
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 grid gap-8 md:grid-cols-3">
+        {/* Col 1: copyright + tasks + legal basis */}
+        <div className="space-y-2">
+          <p className="text-sm font-semibold">
+            © {year} Satpol PP Provinsi Jawa Barat
+          </p>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {SATPOL_TASKS}
+          </p>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Dasar hukum: {LEGAL_BASIS}
+          </p>
+        </div>
 
-          {/* Col 2 */}
-          <nav className="space-y-2" aria-label="Tautan cepat">
-            <h2 className="text-sm font-bold text-foreground">Tautan Cepat</h2>
-            <ul className="space-y-1.5">
-              {QUICK_LINKS.map((link) => (
-                <li key={link.view}>
-                  <button
-                    type="button"
-                    onClick={() => setView(link.view)}
-                    className="text-xs text-muted-foreground hover:text-jabar-gold transition-colors"
-                  >
-                    {link.label}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </nav>
+        {/* Col 2: quick links */}
+        <nav aria-label="Tautan cepat" className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Tautan Cepat
+          </p>
+          <ul className="flex flex-col gap-1">
+            {QUICK_LINKS.map((q) => (
+              <li key={q.view}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-fit justify-start px-2 text-sm text-muted-foreground hover:text-jabar-gold"
+                  onClick={() => setView(q.view)}
+                >
+                  {q.label}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </nav>
 
-          {/* Col 3 */}
-          <section className="space-y-2 md:flex md:flex-col md:items-end md:text-right">
-            <h2 className="text-sm font-bold text-foreground">Dibuat oleh</h2>
-            <div
-              className="inline-flex items-center gap-1.5 rounded-lg bg-jabar-gold px-3 py-1.5 text-xs font-bold text-background shadow-[0_0_18px_rgba(255,214,0,0.45)]"
-              title={TRADEMARK}
-            >
-              <Zap className="size-3.5" aria-hidden />
-              {TRADEMARK}
-            </div>
-            <p className="text-[11px] text-muted-foreground/70">
-              PWA mobile-first &middot; Dark mode &middot; Bahasa Indonesia
-            </p>
-          </section>
+        {/* Col 3: gold trademark badge */}
+        <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {APP_SHORT}
+          </p>
+          <span
+            className="inline-flex items-center gap-1 rounded-full bg-jabar-gold px-3 py-1 text-xs font-bold text-background"
+            style={{ boxShadow: "0 0 12px rgba(255,214,0,0.4)" }}
+          >
+            {TRADEMARK}
+          </span>
+          <p className="text-[11px] text-muted-foreground">
+            Dibuat untuk masyarakat Jawa Barat.
+          </p>
         </div>
       </div>
     </footer>

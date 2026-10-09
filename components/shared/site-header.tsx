@@ -1,197 +1,178 @@
 "use client";
 
 import * as React from "react";
-import { Sun, Moon, LogOut, KeyRound, LogIn } from "lucide-react";
-import { useAppStore } from "@/store/app-store";
-import { useToast } from "@/hooks/use-toast";
-import { apiFetch, ApiError } from "@/lib/api-client";
+import { Sun, Moon, LogOut, ShieldCheck, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  APP_SHORT,
-  TAGLINE,
-  PIMPINAN_ROLES,
-} from "@/lib/constants";
 import { LogoSatpolpp } from "@/components/shared/logo-satpolpp";
-import { GoldShimmerText } from "@/components/shared/gold-shimmer-text";
 import { RoleBadge } from "@/components/shared/role-badge";
+import { GoldShimmerText } from "@/components/shared/gold-shimmer-text";
 import { ChangePasswordDialog } from "@/components/shared/change-password-dialog";
+import { useAppStore } from "@/store/app-store";
+import { PIMPINAN_ROLES } from "@/lib/constants";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 /**
- * SiteHeader — sticky top-0 z-50, glass bg.
- * Left: logo + APP_SHORT (gold-shimmer) + tagline.
- * Right: staff controls (RoleBadge + bidang + Ganti Password + Keluar)
- *        OR masyarakat "Masuk Operator/Pimpinan" button + theme toggle.
- * Mobile: logo + theme + (menu button optional, omitted for now).
+ * SiteHeader — sticky top, glass background.
+ *
+ * Left: SatpolPP horizontal logo (aspect 182×44, NOT rounded) +
+ *       "Yeuh Satpol!" name with gold tagline subtitle.
+ * Right (desktop): role/bidang/Keluar for staff, "Masuk Operator/Pimpinan"
+ *                  for masyarakat, plus theme toggle.
+ * Right (mobile): logo + theme toggle only — nav lives in <BottomNav />.
  */
-function isStaffRole(role?: string | null) {
+function isStaffRole(role: string | undefined): boolean {
   if (!role) return false;
-  return role === "OPERATOR" || PIMPINAN_ROLES.includes(role);
+  return role === "OPERATOR" || role.startsWith("PIMPINAN");
 }
 
 export function SiteHeader() {
   const user = useAppStore((s) => s.user);
   const setUser = useAppStore((s) => s.setUser);
   const setView = useAppStore((s) => s.setView);
+  const setArea = useAppStore((s) => s.setArea);
   const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
-  const { toast } = useToast();
 
-  const [chpwdOpen, setChpwdOpen] = React.useState(false);
-  const [loggingOut, setLoggingOut] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [pwdOpen, setPwdOpen] = React.useState(false);
 
-  const handleLogout = async () => {
-    if (loggingOut) return;
-    setLoggingOut(true);
+  const staff = isStaffRole(user?.role);
+
+  async function handleLogout() {
+    if (busy) return;
+    setBusy(true);
     try {
       await apiFetch("/api/auth/logout", { method: "POST" });
       setUser(null);
-      toast({
-        title: "Berhasil keluar",
-        description: "Sesi telah diakhiri.",
-      });
+      setArea("masyarakat");
+      toast({ title: "Berhasil keluar", description: "Sesi anda telah ditutup." });
     } catch (err) {
-      const apiErr = err as ApiError;
-      // Even if logout API fails, clear local session.
-      setUser(null);
       toast({
-        title: "Sesi dihapus lokal",
-        description: apiErr?.message ?? "Logout API gagal.",
+        title: "Gagal keluar",
+        description: err instanceof Error ? err.message : "Coba lagi nanti.",
         variant: "destructive",
       });
     } finally {
-      setLoggingOut(false);
+      setBusy(false);
     }
-  };
-
-  const isStaff = isStaffRole(user?.role);
+  }
 
   return (
     <header
-      className="sticky top-0 z-50 glass-card border-b border-white/10 rounded-none"
       role="banner"
+      className="sticky top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60"
     >
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex h-14 sm:h-16 items-center justify-between gap-3">
-          {/* Left: logo + title */}
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <LogoSatpolpp height={36} />
-            <div className="min-w-0 flex flex-col">
-              <div className="flex items-center gap-2">
-                <GoldShimmerText as="span" className="text-base sm:text-lg">
-                  {APP_SHORT}
-                </GoldShimmerText>
-              </div>
-              <p className="hidden sm:block text-[10px] text-muted-foreground leading-tight truncate max-w-[40ch]">
-                {TAGLINE}
-              </p>
-            </div>
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
+        {/* Left: logo + name */}
+        <a
+          href="/"
+          onClick={(e) => {
+            e.preventDefault();
+            setView("home");
+          }}
+          className="flex items-center gap-3 min-w-0"
+          aria-label="Yeuh Satpol! — Beranda"
+        >
+          <LogoSatpolpp />
+          <div className="hidden sm:flex flex-col leading-tight min-w-0">
+            <GoldShimmerText as="span" className="text-lg">
+              Yeuh Satpol!
+            </GoldShimmerText>
+            <span className="text-[11px] text-muted-foreground truncate">
+              Pengaduan Trantibumlinmas Jabar
+            </span>
           </div>
+        </a>
 
-          {/* Right: controls */}
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            {isStaff && user ? (
-              <>
-                <div className="hidden md:flex flex-col items-end leading-tight">
-                  <RoleBadge role={user.role} />
-                  {user.bidangName ? (
-                    <span className="text-[10px] text-muted-foreground">
+        {/* Right: desktop-only area switcher + theme toggle */}
+        <div className="flex items-center gap-2">
+          {staff ? (
+            <>
+              {/* Mobile: icon-only Ganti Password shortcut */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setPwdOpen(true)}
+                className="h-9 w-9 sm:hidden"
+                aria-label="Ganti Password"
+              >
+                <KeyRound className="h-4 w-4 text-jabar-gold" aria-hidden />
+                <span className="sr-only">Ganti Password</span>
+              </Button>
+
+              <div className="hidden sm:flex items-center gap-2">
+                <RoleBadge role={user?.role} />
+                {user?.bidangName ? (
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                    <ShieldCheck className="h-3.5 w-3.5 text-jabar-gold" aria-hidden />
+                    <span className="max-w-[180px] truncate">
                       {user.bidangName}
                     </span>
-                  ) : null}
-                  <span className="text-[10px] text-muted-foreground/70">
-                    {user.email}
                   </span>
-                </div>
+                ) : null}
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  onClick={() => setChpwdOpen(true)}
-                  className="hidden sm:inline-flex"
-                  aria-label="Ganti password"
+                  onClick={() => setPwdOpen(true)}
+                  className="gap-1.5"
                 >
-                  <KeyRound className="size-4" aria-hidden />
-                  <span className="hidden lg:inline">Ganti Password</span>
+                  <KeyRound className="h-3.5 w-3.5 text-jabar-gold" aria-hidden />
+                  Ganti Password
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={handleLogout}
-                  disabled={loggingOut}
-                  aria-label="Keluar"
+                  disabled={busy}
+                  className="gap-1.5"
                 >
-                  <LogOut className="size-4" aria-hidden />
-                  <span className="hidden lg:inline">
-                    {loggingOut ? "Keluar…" : "Keluar"}
-                  </span>
+                  <LogOut className="h-3.5 w-3.5" aria-hidden />
+                  Keluar
                 </Button>
-              </>
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setView("login")}
-                aria-label="Masuk sebagai operator atau pimpinan"
-              >
-                <LogIn className="size-4" aria-hidden />
-                <span className="hidden sm:inline">Masuk Operator/Pimpinan</span>
-                <span className="sm:hidden">Masuk</span>
-              </Button>
-            )}
+              </div>
 
+              <ChangePasswordDialog
+                open={pwdOpen}
+                onOpenChange={setPwdOpen}
+              />
+            </>
+          ) : (
             <Button
               type="button"
-              variant="ghost"
-              size="icon"
-              onClick={toggleTheme}
-              aria-label={
-                theme === "dark"
-                  ? "Aktifkan mode terang"
-                  : "Aktifkan mode gelap"
-              }
-              title={theme === "dark" ? "Mode terang" : "Mode gelap"}
-              className="text-foreground hover:text-jabar-gold"
+              variant="outline"
+              size="sm"
+              onClick={() => setView("login")}
+              className="hidden sm:inline-flex gap-1.5 border-jabar-gold/40 text-jabar-gold hover:bg-jabar-gold/10"
             >
-              {theme === "dark" ? (
-                <Sun className="size-4" aria-hidden />
-              ) : (
-                <Moon className="size-4" aria-hidden />
-              )}
+              <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+              Masuk Operator/Pimpinan
             </Button>
-          </div>
+          )}
+
+          {/* Theme toggle — visible on all sizes */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Ganti ke mode terang" : "Ganti ke mode gelap"}
+            aria-pressed={theme === "light"}
+            className={cn("h-9 w-9")}
+          >
+            {theme === "dark" ? (
+              <Sun className="h-4 w-4 text-jabar-gold" aria-hidden />
+            ) : (
+              <Moon className="h-4 w-4 text-jabar-gold" aria-hidden />
+            )}
+            <span className="sr-only">Ganti tema</span>
+          </Button>
         </div>
       </div>
-
-      {/* Mobile-only sub-header: show staff info compactly */}
-      {isStaff && user ? (
-        <div className="sm:hidden border-t border-white/5 px-4 py-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <RoleBadge role={user.role} />
-              <span className="text-[10px] text-muted-foreground truncate">
-                {user.bidangName ?? user.email}
-              </span>
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setChpwdOpen(true)}
-              className="h-7 px-2 text-xs"
-              aria-label="Ganti password"
-            >
-              <KeyRound className="size-3.5" aria-hidden />
-              Password
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
-      <ChangePasswordDialog open={chpwdOpen} onOpenChange={setChpwdOpen} />
-
-      <span className="sr-only">Header aplikasi {APP_SHORT}</span>
     </header>
   );
 }

@@ -1,15 +1,32 @@
-// store/app-store.ts — SPA view-switching + auth + UI (Zustand)
+// src/store/app-store.ts — SPA view-switching + auth + UI state (Zustand)
 "use client";
+
 import { create } from "zustand";
 
 export type ViewKey =
-  | "home" | "lapor" | "track" | "transparency" | "login"
-  | "operator-inbox" | "operator-detail" | "operator-dashboard"
-  | "pimpinan-command" | "pimpinan-critical" | "pimpinan-kpi" | "pimpinan-trend";
+  | "home"
+  | "lapor"
+  | "track"
+  | "transparency"
+  | "login"
+  | "operator-inbox"
+  | "operator-detail"
+  | "operator-dashboard"
+  | "pimpinan-command"
+  | "pimpinan-critical"
+  | "pimpinan-kpi"
+  | "pimpinan-trend";
 
 export type RoleArea = "masyarakat" | "operator" | "pimpinan";
 
-export interface SessionUser { id: string; email: string; name: string; role: string; bidangId?: string | null; bidangName?: string | null; }
+export interface SessionUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  bidangId?: string | null;
+  bidangName?: string | null;
+}
 
 interface AppState {
   area: RoleArea;
@@ -30,17 +47,30 @@ export const useAppStore = create<AppState>((set, get) => ({
   area: "masyarakat",
   view: "home",
   selectedReportId: null,
-  setArea: (area) => set({ area, view: area === "masyarakat" ? "home" : area === "operator" ? "operator-inbox" : "pimpinan-command" }),
+  setArea: (area) =>
+    set({
+      area,
+      view:
+        area === "masyarakat"
+          ? "home"
+          : area === "operator"
+          ? "operator-inbox"
+          : "pimpinan-command",
+    }),
   setView: (view) => set({ view }),
   openReport: (id) => set({ selectedReportId: id, view: "operator-detail" }),
+
   user: null,
   setUser: (user) => {
     set({ user });
     if (user) {
       if (user.role === "OPERATOR") set({ area: "operator", view: "operator-inbox" });
       else if (user.role.startsWith("PIMPINAN")) set({ area: "pimpinan", view: "pimpinan-command" });
-    } else { set({ area: "masyarakat", view: "home" }); }
+    } else {
+      set({ area: "masyarakat", view: "home" });
+    }
   },
+
   theme: "dark",
   toggleTheme: () => {
     const next = get().theme === "dark" ? "light" : "dark";
@@ -50,11 +80,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({ theme: next });
   },
+
   hydrated: false,
   setHydrated: (hydrated) => set({ hydrated }),
 }));
 
+// Helper hook for view/area routing from URL query (?view=lapor)
 export function viewFromQuery(q: string | null): ViewKey | null {
-  const map: Record<string, ViewKey> = { lapor: "lapor", track: "track", transparency: "transparency", login: "login" };
+  const map: Record<string, ViewKey> = {
+    lapor: "lapor",
+    track: "track",
+    transparency: "transparency",
+    login: "login",
+  };
   return q ? map[q] ?? null : null;
 }

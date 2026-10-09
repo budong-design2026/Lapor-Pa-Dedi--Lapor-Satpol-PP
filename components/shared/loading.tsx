@@ -1,68 +1,53 @@
+"use client";
+
 import * as React from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
-/**
- * Loading — block-level centered loader. Pure presentational.
- */
-export function Loading({
-  label = "Memuat…",
-  className,
-}: {
-  label?: string;
-  className?: string;
-}) {
+/** Full-block centered gold spinner with optional label. */
+export function Loading({ label }: { label?: string }) {
   return (
     <div
-      className={cn(
-        "flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground",
-        className,
-      )}
       role="status"
       aria-live="polite"
+      className="flex flex-col items-center justify-center gap-3 py-16 text-center"
     >
-      <Loader2 className="size-8 animate-spin text-jabar-gold" aria-hidden />
-      <span className="text-sm">{label}</span>
-      <span className="sr-only">{label}</span>
+      <Loader2 className="h-8 w-8 animate-spin text-jabar-gold" aria-hidden />
+      {label ? (
+        <p className="text-sm text-muted-foreground">{label}</p>
+      ) : (
+        <span className="sr-only">Memuat…</span>
+      )}
     </div>
   );
 }
 
-/**
- * LoadingSpinner — inline spinner. Pure presentational.
- */
-export function LoadingSpinner({
-  className,
-  size = 16,
-}: {
-  className?: string;
-  size?: number;
-}) {
+/** Inline gold spinner — use inside buttons / rows. */
+export function LoadingSpinner({ className }: { className?: string }) {
   return (
     <Loader2
-      className={cn("animate-spin", className)}
-      size={size}
+      className={cn("h-4 w-4 animate-spin text-jabar-gold", className)}
       aria-hidden
     />
   );
 }
 
-/**
- * RowSkeleton — placeholder row for lists. Pure presentational.
- */
+/** Skeleton row for lists (avatar + two lines). */
 export function RowSkeleton({ count = 3 }: { count?: number }) {
   return (
-    <div className="flex flex-col gap-3" aria-hidden>
+    <div className="flex flex-col gap-3">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="glass-card rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <Skeleton className="size-10 rounded-full" />
-            <div className="flex-1 space-y-2">
-              <Skeleton className="h-4 w-3/4" />
-              <Skeleton className="h-3 w-1/2" />
-            </div>
+        <div
+          key={i}
+          className="glass-card rounded-xl p-4 flex items-center gap-3"
+        >
+          <Skeleton className="h-10 w-10 rounded-full bg-accent/60" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-3 w-2/3 bg-accent/60" />
+            <Skeleton className="h-3 w-1/3 bg-accent/60" />
           </div>
+          <Skeleton className="h-6 w-16 rounded-md bg-accent/60" />
         </div>
       ))}
     </div>

@@ -1,38 +1,42 @@
-// /api/auth/me — current session user
+// /api/auth/me — Return current user from JWT (refresh bidang name via raw libsql).
 import { NextResponse } from "next/server";
-import { getUserById, getBidangById, ensureTables } from "@/lib/db-raw";
 import { getCurrentUser } from "@/lib/auth";
+import { getUserById, getBidangByCode, raw } from "@/lib/db-raw";
 
 export async function GET() {
   try {
-    await ensureTables();
-    const session = await getCurrentUser();
-    if (!session) {
-      return NextResponse.json({ user: null });
-    }
-    const user = await getUserById(session.sub);
-    if (!user) {
-      return NextResponse.json({ user: null });
-    }
+    const payload = await getCurrentUser();
+    if (!payload) return NextResponse.json({ user: null });
+
+    const u = await getUserById(payload.sub);
+    if (!u) return NextResponse.json({ user: null });
+
     let bidangName: string | null = null;
-    if (user.bidangId) {
-      const b = await getBidangById(String(user.bidangId));
-      bidangName = b ? String(b.name) : null;
+    if (u.bidangId) {
+      // bidangId could be id or code — check both
+      const res = await raw().execute({
+        sql: `SELECT * FROM "Bidang" WHERE "id" = ? OR "code" = ? LIMIT 1`,
+        args: [u.bidangId, u.bidangId],
+      });
+      if (res.rows[0]) {
+        bidangName = String((res.rows[0] as Record<string, unknown>).name);
+      } else {
+        const byCode = await getBidangByCode(u.bidangId);
+        if (byCode) bidangName = byCode.name;
+      }
     }
+
     return NextResponse.json({
       user: {
-        id: String(user.id),
-        email: String(user.email),
-        name: String(user.name),
-        role: String(user.role),
-        bidangId: user.bidangId ?? null,
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        role: u.role,
+        bidangId: u.bidangId,
         bidangName,
       },
     });
-  } catch (err) {
-    return NextResponse.json(
-      { error: "Gagal memuat user", detail: String((err as Error)?.message ?? err) },
-      { status: 500 }
-    );
+  } catch {
+    return NextResponse.json({ user: null });
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { KeyRound, Loader2 } from "lucide-react";
+import { KeyRound, Loader2, AlertCircle } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -13,216 +13,272 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { useAppStore } from "@/store/app-store";
 
 /**
- * ChangePasswordDialog — staff self-service password change.
- * Submits POST /api/auth/change-password.
- * On 401 with "Password lama salah" highlights the current-password field.
- * On 401 with session-expiry message: setUser(null) + setView("login").
+ * ChangePasswordDialog — modal form for the logged-in staff user to change
+ * their own password. Posts to `/api/auth/change-password` (auth required).
+ *
+ * Validation:
+ * - newPassword: min 8 char (matches backend rule).
+ * - confirmPassword: must equal newPassword.
+ *
+ * Server-error mapping:
+ * - 401 "Sesi berakhir" → setUser(null) + setView('login') + close dialog.
+ * - 401 "Password lama salah" → highlight the "Password Lama" field inline.
+ * - 400 "minimal 8 karakter" → highlight the "Password Baru" field inline.
+ * - Other → toast.error(err.message) + inline server error banner.
+ *
+ * Styling: `glass-card` class on DialogContent (midnight navy glassmorphism).
+ * Submit button: gold (`bg-jabar-gold text-background`). Cancel: ghost.
  */
-export interface ChangePasswordDialogProps {
+interface ChangePasswordDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-interface FormState {
-  currentPassword: string;
-  newPassword: string;
-  confirmPassword: string;
-}
+const MIN_PASSWORD_LENGTH = 8;
 
-const EMPTY: FormState = {
-  currentPassword: "",
-  newPassword: "",
-  confirmPassword: "",
-};
+interface FieldErrors {
+  currentPassword?: string;
+  newPassword?: string;
+  confirmPassword?: string;
+}
 
 export function ChangePasswordDialog({
   open,
   onOpenChange,
 }: ChangePasswordDialogProps) {
-  const { toast } = useToast();
   const setUser = useAppStore((s) => s.setUser);
   const setView = useAppStore((s) => s.setView);
 
-  const [form, setForm] = React.useState<FormState>(EMPTY);
-  const [submitting, setSubmitting] = React.useState(false);
-  const [fieldError, setFieldError] = React.useState<string | null>(null);
+  const [currentPassword, setCurrentPassword] = React.useState("");
+  const [newPassword, setNewPassword] = React.useState("");
+  const [confirmPassword, setConfirmPassword] = React.useState("");
+  const [errors, setErrors] = React.useState<FieldErrors>({});
+  const [busy, setBusy] = React.useState(false);
+  const [serverError, setServerError] = React.useState<string | null>(null);
 
-  // Reset on close
+  // Reset all state whenever the dialog closes (clears fields & errors
+  // so the next open is fresh — also avoids leaking the typed password).
   React.useEffect(() => {
     if (!open) {
-      setForm(EMPTY);
-      setFieldError(null);
-      setSubmitting(false);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setErrors({});
+      setServerError(null);
+      setBusy(false);
     }
   }, [open]);
 
-  const update = (key: keyof FormState, val: string) => {
-    setForm((f) => ({ ...f, [key]: val }));
-    if (key === "currentPassword" && fieldError) setFieldError(null);
-  };
+  function validate(): FieldErrors {
+    const e: FieldErrors = {};
+    if (!currentPassword) e.currentPassword = "Password lama wajib diisi";
+    if (newPassword.length < MIN_PASSWORD_LENGTH)
+      e.newPassword = `Password baru minimal ${MIN_PASSWORD_LENGTH} karakter`;
+    if (!confirmPassword) e.confirmPassword = "Konfirmasi password wajib diisi";
+    else if (confirmPassword !== newPassword)
+      e.confirmPassword = "Konfirmasi tidak cocok dengan password baru";
+    return e;
+  }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Re-validate a single field on blur so the user gets immediate feedback
+  // after they leave the input.
+  function onFieldBlur(name: keyof FieldErrors) {
+    const v = validate();
+    setErrors((prev) => ({ ...prev, [name]: v[name] }));
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (submitting) return;
+    if (busy) return;
+    setServerError(null);
 
-    setFieldError(null);
+    const v = validate();
+    setErrors(v);
+    if (Object.keys(v).length > 0) return;
 
-    if (form.newPassword.length < 8) {
-      setFieldError("newPassword");
-      toast({
-        title: "Password baru minimal 8 karakter",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (form.newPassword !== form.confirmPassword) {
-      setFieldError("confirmPassword");
-      toast({
-        title: "Konfirmasi password tidak cocok",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setSubmitting(true);
+    setBusy(true);
     try {
-      await apiFetch("/api/auth/change-password", {
-        method: "POST",
-        body: JSON.stringify({
-          currentPassword: form.currentPassword,
-          newPassword: form.newPassword,
-        }),
-      });
-      toast({
-        title: "Password berhasil diubah",
-        description: "Silakan login kembali dengan password baru.",
-      });
+      await apiFetch<{ ok: boolean; message?: string }>(
+        "/api/auth/change-password",
+        {
+          method: "POST",
+          body: JSON.stringify({ currentPassword, newPassword }),
+        }
+      );
+      toast.success("Password berhasil diubah");
       onOpenChange(false);
     } catch (err) {
       const apiErr = err as ApiError;
-      const msg = String(apiErr?.message ?? "").toLowerCase();
+      const msg = apiErr?.message ?? "Gagal mengubah password";
 
-      if (apiErr?.status === 401) {
-        if (msg.includes("lama") || msg.includes("current") || msg.includes("salah")) {
-          setFieldError("currentPassword");
-          toast({
-            title: "Password lama salah",
-            variant: "destructive",
-          });
-        } else {
-          // Session expired
-          toast({
-            title: "Sesi berakhir",
-            description: "Silakan login kembali.",
-            variant: "destructive",
-          });
-          setUser(null);
-          setView("login");
-          onOpenChange(false);
-        }
-      } else {
-        toast({
-          title: "Gagal mengubah password",
-          description: apiErr?.message ?? "Terjadi kesalahan",
-          variant: "destructive",
-        });
+      // 401 "Sesi berakhir, silakan masuk lagi" → force logout + login view.
+      if (apiErr?.status === 401 && /sesi berakhir/i.test(msg)) {
+        toast.error("Sesi berakhir, silakan masuk lagi");
+        setUser(null);
+        setView("login");
+        onOpenChange(false);
+        return;
       }
+
+      // 401 "Password lama salah" → highlight the Password Lama field.
+      if (apiErr?.status === 401 && /password lama/i.test(msg)) {
+        setErrors((prev) => ({ ...prev, currentPassword: msg }));
+        setServerError(msg);
+        toast.error(msg);
+        return;
+      }
+
+      // 400 "Password baru minimal 8 karakter" → highlight Password Baru field.
+      if (apiErr?.status === 400 && /minimal 8 karakter/i.test(msg)) {
+        setErrors((prev) => ({ ...prev, newPassword: msg }));
+      }
+
+      setServerError(msg);
+      toast.error(msg);
     } finally {
-      setSubmitting(false);
+      setBusy(false);
     }
-  };
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className="glass-card border-0 sm:max-w-md"
+        aria-describedby="cp-desc"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-foreground">
-            <KeyRound className="size-5 text-jabar-gold" aria-hidden />
+            <KeyRound className="h-5 w-5 text-jabar-gold" aria-hidden />
             Ganti Password
           </DialogTitle>
-          <DialogDescription>
-            Untuk keamanan akun, gunakan password yang kuat (min. 8 karakter).
+          <DialogDescription id="cp-desc">
+            Demi keamanan akun, gunakan password baru minimal{" "}
+            {MIN_PASSWORD_LENGTH} karakter.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="chpwd-current">Password Lama</Label>
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+          {/* ─── Password Lama ─── */}
+          <div className="space-y-1.5">
+            <Label htmlFor="cp-current">Password Lama</Label>
             <Input
-              id="chpwd-current"
+              id="cp-current"
               type="password"
               autoComplete="current-password"
-              value={form.currentPassword}
-              onChange={(e) => update("currentPassword", e.target.value)}
-              required
-              aria-invalid={fieldError === "currentPassword"}
-              disabled={submitting}
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              onBlur={() => onFieldBlur("currentPassword")}
+              disabled={busy}
+              aria-invalid={!!errors.currentPassword}
+              aria-describedby={
+                errors.currentPassword ? "cp-current-err" : undefined
+              }
             />
+            {errors.currentPassword ? (
+              <p
+                id="cp-current-err"
+                className="text-xs text-destructive"
+                role="alert"
+              >
+                {errors.currentPassword}
+              </p>
+            ) : null}
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="chpwd-new">Password Baru</Label>
+          {/* ─── Password Baru ─── */}
+          <div className="space-y-1.5">
+            <Label htmlFor="cp-new">Password Baru</Label>
             <Input
-              id="chpwd-new"
+              id="cp-new"
               type="password"
               autoComplete="new-password"
-              value={form.newPassword}
-              onChange={(e) => update("newPassword", e.target.value)}
-              required
-              minLength={8}
-              aria-invalid={fieldError === "newPassword"}
-              disabled={submitting}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              onBlur={() => onFieldBlur("newPassword")}
+              disabled={busy}
+              aria-invalid={!!errors.newPassword}
+              aria-describedby={errors.newPassword ? "cp-new-err" : undefined}
             />
-            <p className="text-[11px] text-muted-foreground">
-              Minimal 8 karakter.
-            </p>
+            {errors.newPassword ? (
+              <p
+                id="cp-new-err"
+                className="text-xs text-destructive"
+                role="alert"
+              >
+                {errors.newPassword}
+              </p>
+            ) : (
+              <p className="text-[11px] text-muted-foreground">
+                Minimal {MIN_PASSWORD_LENGTH} karakter.
+              </p>
+            )}
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="chpwd-confirm">Konfirmasi Password Baru</Label>
+          {/* ─── Konfirmasi Password Baru ─── */}
+          <div className="space-y-1.5">
+            <Label htmlFor="cp-confirm">Konfirmasi Password Baru</Label>
             <Input
-              id="chpwd-confirm"
+              id="cp-confirm"
               type="password"
               autoComplete="new-password"
-              value={form.confirmPassword}
-              onChange={(e) => update("confirmPassword", e.target.value)}
-              required
-              minLength={8}
-              aria-invalid={fieldError === "confirmPassword"}
-              disabled={submitting}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              onBlur={() => onFieldBlur("confirmPassword")}
+              disabled={busy}
+              aria-invalid={!!errors.confirmPassword}
+              aria-describedby={
+                errors.confirmPassword ? "cp-confirm-err" : undefined
+              }
             />
+            {errors.confirmPassword ? (
+              <p
+                id="cp-confirm-err"
+                className="text-xs text-destructive"
+                role="alert"
+              >
+                {errors.confirmPassword}
+              </p>
+            ) : null}
           </div>
 
-          <DialogFooter>
+          {serverError ? (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-2.5 text-xs text-destructive"
+            >
+              <AlertCircle
+                className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                aria-hidden
+              />
+              <span>{serverError}</span>
+            </div>
+          ) : null}
+
+          <DialogFooter className="gap-2 pt-2">
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               onClick={() => onOpenChange(false)}
-              disabled={submitting}
+              disabled={busy}
             >
               Batal
             </Button>
             <Button
               type="submit"
-              className="bg-jabar-gold text-background hover:bg-jabar-gold/90"
-              disabled={submitting}
+              disabled={busy}
+              className="gap-1.5 bg-jabar-gold text-background hover:bg-jabar-gold/90"
             >
-              {submitting ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" aria-hidden />
-                  Menyimpan…
-                </>
+              {busy ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
               ) : (
-                <>
-                  <KeyRound className="size-4" aria-hidden />
-                  Simpan Password
-                </>
+                <KeyRound className="h-4 w-4" aria-hidden />
               )}
+              {busy ? "Menyimpan…" : "Ganti Password"}
             </Button>
           </DialogFooter>
         </form>

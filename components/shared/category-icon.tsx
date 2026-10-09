@@ -1,7 +1,8 @@
+"use client";
+
 import * as React from "react";
-import { createElement } from "react";
 import {
-  Map as MapIcon,
+  Map,
   Route,
   Bus,
   Waves,
@@ -21,17 +22,18 @@ import {
   MessageCircle,
   type LucideIcon,
 } from "lucide-react";
+import { getCategory } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 /**
- * CategoryIcon — render the lucide icon for a category code.
+ * Static icon map — covers all 18 categories in CATEGORIES.
  * Falls back to MessageCircle for unknown codes.
- * Uses createElement for linter-friendly dynamic dispatch.
- * Pure presentational.
+ *
+ * Resolved outside the render so the returned component reference is stable;
+ * rendered via `createElement` so the static-components lint rule is happy.
  */
-
 const ICON_MAP: Record<string, LucideIcon> = {
-  Map: MapIcon,
+  Map,
   Route,
   Bus,
   Waves,
@@ -51,26 +53,20 @@ const ICON_MAP: Record<string, LucideIcon> = {
   MessageCircle,
 };
 
-export interface CategoryIconProps {
-  icon?: string;
-  className?: string;
-  size?: number;
-  "aria-hidden"?: boolean;
+function lookupCategoryIcon(code: string): LucideIcon {
+  const cat = getCategory(code);
+  if (cat && ICON_MAP[cat.icon]) return ICON_MAP[cat.icon];
+  return MessageCircle;
 }
 
 export function CategoryIcon({
-  icon = "MessageCircle",
+  code,
   className,
-  size = 18,
-  ...rest
-}: CategoryIconProps) {
-  const IconComp = ICON_MAP[icon] ?? MessageCircle;
-  return createElement(IconComp, {
-    className: cn("shrink-0", className),
-    size,
-    "aria-hidden": true,
-    ...rest,
-  });
+}: {
+  code: string;
+  className?: string;
+}) {
+  const cls = cn("h-5 w-5", className);
+  const Icon = lookupCategoryIcon(code);
+  return React.createElement(Icon, { className: cls, "aria-hidden": true });
 }
-
-export { ICON_MAP };

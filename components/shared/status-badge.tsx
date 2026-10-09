@@ -1,47 +1,41 @@
+"use client";
+
 import * as React from "react";
-import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { REPORT_STATUSES, type ReportStatusKey } from "@/lib/constants";
 
 /**
- * StatusBadge — render report status with color from REPORT_STATUSES.
- * Pure presentational.
+ * StatusBadge — colored report-status badge.
  */
-export interface StatusBadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
-  status: ReportStatusKey | string | null | undefined;
-  size?: "sm" | "md";
-}
-
 export function StatusBadge({
   status,
-  size = "sm",
   className,
-  ...props
-}: StatusBadgeProps) {
-  const key = (status as ReportStatusKey | null) ?? "DITERIMA";
-  const cfg = REPORT_STATUSES[key] ?? REPORT_STATUSES.DITERIMA;
+}: {
+  status: ReportStatusKey | string | null | undefined;
+  className?: string;
+}) {
+  if (!status || !REPORT_STATUSES[status as ReportStatusKey]) {
+    return (
+      <Badge variant="secondary" className={cn("text-muted-foreground", className)}>
+        —
+      </Badge>
+    );
+  }
+
+  const s = REPORT_STATUSES[status as ReportStatusKey];
 
   return (
     <Badge
       variant="outline"
-      className={cn(
-        "border gap-1 font-semibold capitalize",
-        size === "md" ? "px-3 py-1 text-sm" : "px-2 py-0.5 text-xs",
-        className,
-      )}
+      className={cn("font-semibold", className)}
       style={{
-        color: cfg.color,
-        borderColor: cfg.color,
-        backgroundColor: `${cfg.color}1a`,
+        color: s.color,
+        borderColor: s.color,
+        backgroundColor: `${s.color}1a`,
       }}
-      {...props}
     >
-      <span
-        aria-hidden
-        className="inline-block size-1.5 rounded-full"
-        style={{ backgroundColor: cfg.color }}
-      />
-      <span>{cfg.label}</span>
+      {s.label}
     </Badge>
   );
 }

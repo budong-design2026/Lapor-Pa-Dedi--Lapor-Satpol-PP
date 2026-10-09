@@ -1,31 +1,23 @@
-import * as React from "react";
-import { cn } from "@/lib/utils";
+"use client";
+
+import Image from "next/image";
 
 /**
- * LogoPemprov — Pemprov Jabar logo (placeholder using /logo-satpol.svg).
- * User will re-upload the real logos later.
- * Aspect ratio preserved; NOT rounded.
- * Pure presentational.
+ * LogoPemprov
+ *
+ * Pemerintah Provinsi Jawa Barat vertical emblem (682×961).
+ * Renders with object-contain, NO border-radius, responsive width.
  */
-export interface LogoPemprovProps
-  extends React.ImgHTMLAttributes<HTMLImageElement> {
-  height?: number;
-}
-
-export function LogoPemprov({
-  height = 64,
-  className,
-  alt = "Pemprov Jabar (placeholder)",
-  ...props
-}: LogoPemprovProps) {
+export function LogoPemprov({ className }: { className?: string }) {
   return (
-    <img
-      src="/logo-satpol.svg"
-      alt={alt}
-      height={height}
-      style={{ height, width: "auto" }}
-      className={cn("object-contain", className)}
-      {...props}
+    <Image
+      src="/logo-pemprov-jabar.png"
+      alt="Pemerintah Provinsi Jawa Barat"
+      width={96}
+      height={135}
+      sizes="(max-width: 640px) 64px, (max-width: 768px) 80px, 96px"
+      className={`h-auto w-16 sm:w-20 md:w-24 object-contain ${className ?? ""}`}
+      priority
     />
   );
 }

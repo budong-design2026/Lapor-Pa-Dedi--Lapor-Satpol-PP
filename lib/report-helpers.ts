@@ -1,4 +1,4 @@
-// lib/report-helpers.ts — ticket gen, SLA, timeAgo, JSON array helpers
+// lib/report-helpers.ts — ticket generation, SLA, JSON array helpers
 import { RISK_LEVELS } from "./constants";
 
 export function generateTicketNumber(): string {
@@ -14,11 +14,20 @@ export function calculateSlaDeadline(riskLevel: string, from: Date = new Date())
   return new Date(from.getTime() + cfg.slaHours * 60 * 60 * 1000);
 }
 
+// JSON string-array helpers (SQLite has no native arrays)
 export function parseArray<T = string>(json: string | null | undefined): T[] {
   if (!json) return [];
-  try { const v = JSON.parse(json); return Array.isArray(v) ? (v as T[]) : []; } catch { return []; }
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? (v as T[]) : [];
+  } catch {
+    return [];
+  }
 }
-export function stringifyArray(arr: string[]): string { return JSON.stringify(arr ?? []); }
+
+export function stringifyArray(arr: string[]): string {
+  return JSON.stringify(arr ?? []);
+}
 
 export function timeAgo(date: Date | string | null | undefined): string {
   if (!date) return "-";
@@ -32,10 +41,15 @@ export function timeAgo(date: Date | string | null | undefined): string {
   if (hr < 24) return `${hr} jam lalu`;
   const day = Math.floor(hr / 24);
   if (day < 30) return `${day} hari lalu`;
-  return `${Math.floor(day / 30)} bulan lalu`;
+  const mo = Math.floor(day / 30);
+  return `${mo} bulan lalu`;
 }
 
-export function slaTimeRemaining(deadline: Date | string | null | undefined): { ms: number; label: string; overdue: boolean; } {
+export function slaTimeRemaining(deadline: Date | string | null | undefined): {
+  ms: number;
+  label: string;
+  overdue: boolean;
+} {
   if (!deadline) return { ms: 0, label: "-", overdue: false };
   const d = typeof deadline === "string" ? new Date(deadline) : deadline;
   const ms = d.getTime() - Date.now();

@@ -1,144 +1,133 @@
-// /api/setup — GET + POST. Initialize DB tables, seed Bidangs + admin + demo staff.
+// /api/setup — Initialize Turso DB + create ALL staff accounts (admin + operator + kabid + sekretaris).
+// Uses raw libsql (bypass Prlesia).
 import { NextResponse } from "next/server";
 import {
-  raw,
   ensureTables,
   countUsers,
   countBidangs,
   countReports,
   upsertBidang,
-  getUserByEmail,
+  upsertUser,
+  hashPassword,
   getBidangByCode,
-  genId,
 } from "@/lib/db-raw";
-import { hashPassword } from "@/lib/auth";
-import { BIDANG_LIST, ROLE_LABELS } from "@/lib/constants";
-
-// Inline user upsert that explicitly sets updatedAt (works with legacy Prisma-migrated schema
-// where User table has NOT NULL updatedAt without default).
-async function upsertUserRobust(
-  email: string,
-  name: string,
-  role: string,
-  passwordHash: string,
-  bidangId: string | null
-): Promise<void> {
-  const ex = await getUserByEmail(email);
-  if (ex) {
-    await raw().execute({
-      sql: `UPDATE "User" SET "name"=?, "role"=?, "password"=?, "bidangId"=?, "updatedAt"=datetime('now') WHERE "email"=?`,
-      args: [name, role, passwordHash, bidangId, email],
-    });
-  } else {
-    await raw().execute({
-      sql: `INSERT INTO "User" ("id","email","password","name","role","bidangId","createdAt","updatedAt") VALUES (?,?,?,?,?,?,datetime('now'),datetime('now'))`,
-      args: [genId(), email, passwordHash, name, role, bidangId],
-    });
-  }
-}
-
-async function runSetup(key?: string) {
-  // Auth gate
-  const setupKeyEnv = process.env.SETUP_KEY;
-  if (setupKeyEnv) {
-    if (key !== setupKeyEnv) {
-      return NextResponse.json({ error: "Setup key salah" }, { status: 403 });
-    }
-  } else {
-    const userCount = await countUsers();
-    if (userCount > 0) {
-      return NextResponse.json(
-        { error: "DB sudah ada user. Hubungi admin untuk reset." },
-        { status: 403 }
-      );
-    }
-  }
-
-  // Validate admin creds from env
-  const adminEmail = process.env.ADMIN_EMAIL;
-  const adminPassword = process.env.ADMIN_PASSWORD;
-  if (!adminEmail || !adminPassword || adminPassword.length < 10) {
-    return NextResponse.json(
-      { error: "ADMIN_EMAIL & ADMIN_PASSWORD (min 10 char) wajib di-set di environment." },
-      { status: 400 }
-    );
-  }
-  const adminName = process.env.ADMIN_NAME ?? "Kasatpol PP Jabar";
-
-  await ensureTables();
-
-  // Seed bidangs
-  for (const b of BIDANG_LIST) {
-    await upsertBidang(b.code, b.name, b.description);
-  }
-
-  // Resolve bidang id for TRANTIBUM (used by demo staff)
-  const trantibum = await getBidangByCode("TRANTIBUM");
-
-  // Admin user (PIMPINAN_KASATPOL, no bidang)
-  await upsertUserRobust(adminEmail, adminName, "PIMPINAN_KASATPOL", hashPassword(adminPassword), null);
-
-  // Demo staff
-  const demoStaff: Array<{ email: string; name: string; role: string; bidangCode: string | null; password: string }> = [
-    { email: "operator@jabar.go.id", name: "Operator Trantibum Jabar", role: "OPERATOR", bidangCode: "TRANTIBUM", password: "OperatorJabar!Tegas26" },
-    { email: "kabidsatpol@jabar.go.id", name: "Kabid Trantibum Jabar", role: "PIMPINAN_KABID", bidangCode: "TRANTIBUM", password: "KabidSatpolJabar26" },
-    { email: "sekretaris@jabar.go.id", name: "Sekretaris Satpol PP Jabar", role: "PIMPINAN_SEKRETARIS", bidangCode: null, password: "SekretarisJabar!Mantap26" },
-  ];
-  for (const s of demoStaff) {
-    let bidangId: string | null = null;
-    if (s.bidangCode) {
-      const b = await getBidangByCode(s.bidangCode);
-      bidangId = b ? String(b.id) : null;
-    }
-    await upsertUserRobust(s.email, s.name, s.role, hashPassword(s.password), bidangId);
-  }
-
-  const summary = {
-    bidang: await countBidangs(),
-    user: await countUsers(),
-    report: await countReports(),
-  };
-
-  return NextResponse.json({
-    ok: true,
-    message: "Setup berhasil. Tabel dibuat, bidang & user admin ter-seed.",
-    summary,
-    accounts: {
-      admin: { email: adminEmail, name: adminName, role: "PIMPINAN_KASATPOL", label: ROLE_LABELS.PIMPINAN_KASATPOL, bidangCode: null },
-      staff: demoStaff.map((s) => ({
-        email: s.email,
-        name: s.name,
-        role: s.role,
-        label: ROLE_LABELS[s.role],
-        bidangCode: s.bidangCode,
-      })),
-      trantibumBidangId: trantibum ? String(trantibum.id) : null,
-    },
-  });
-}
+import { BIDANG_LIST } from "@/lib/constants";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const key = (body as Record<string, unknown>).key;
-    return await runSetup(typeof key === "string" ? key : undefined);
-  } catch (err) {
+    const setupKey = process.env.SETUP_KEY?.trim();
+    let body: { key?: string } = {};
+    try {
+      body = await req.json();
+    } catch {}
+
+    // Auth gate
+    if (setupKey) {
+      if (body.key !== setupKey) {
+        return NextResponse.json(
+          { error: "Setup key salah. Kirim ?key=... atau { key: '...' } di body." },
+          { status: 401 }
+        );
+      }
+    } else {
+      // No SETUP_KEY: allow only on empty DB (first bootstrap)
+      await ensureTables();
+      if (await countUsers() > 0) {
+        return NextResponse.json(
+          { error: "DB sudah ada user. Set env SETUP_KEY lalu buka /api/setup?key=... untuk setup ulang + buat semua akun staf." },
+          { status: 403 }
+        );
+      }
+    }
+
+    const adminEmail = process.env.ADMIN_EMAIL?.trim();
+    const adminPassword = process.env.ADMIN_PASSWORD?.trim();
+    const adminName = process.env.ADMIN_NAME?.trim() || "Kepala Satpol PP Prov. Jawa Barat";
+
+    if (!adminEmail || !adminPassword) {
+      return NextResponse.json(
+        { error: "ADMIN_EMAIL & ADMIN_PASSWORD harus diset di env." },
+        { status: 400 }
+      );
+    }
+    if (adminPassword.length < 10) {
+      return NextResponse.json({ error: "ADMIN_PASSWORD min 10 char." }, { status: 400 });
+    }
+
+    // 1. Create tables
+    await ensureTables();
+
+    // 2. Seed 5 Bidang
+    for (const b of BIDANG_LIST) {
+      await upsertBidang(b.code, b.name, b.description ?? "");
+    }
+
+    // 3. Seed super admin (Kasatpol PP) — from env
+    await upsertUser(adminEmail, adminName, "PIMPINAN_KASATPOL", hashPassword(adminPassword));
+
+    // 4. Seed demo staff accounts (operator, kabid, sekretaris)
+    // These let leadership demo each role's view.
+    const trantibum = await getBidangByCode("TRANTIBUM");
+    const trantibumId = trantibum?.id ?? null;
+
+    const staff = [
+      {
+        email: "operator@jabar.go.id",
+        password: "OperatorJabar!Tegas26",
+        name: "Operator Bidang Trantibum",
+        role: "OPERATOR",
+        bidangId: trantibumId,
+      },
+      {
+        email: "kabidsatpol@jabar.go.id",
+        password: "KabidSatpolJabar26",
+        name: "Kepala Bidang Satpol PP",
+        role: "PIMPINAN_KABID",
+        bidangId: trantibumId,
+      },
+      {
+        email: "sekretaris@jabar.go.id",
+        password: "SekretarisJabar!Mantap26",
+        name: "Sekretaris Satpol PP",
+        role: "PIMPINAN_SEKRETARIS",
+        bidangId: null,
+      },
+    ];
+    for (const s of staff) {
+      await upsertUser(s.email, s.name, s.role, hashPassword(s.password), s.bidangId);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      message: "Database berhasil diinisialisasi. Semua akun staf dibuat. Sistem siap pakai.",
+      summary: {
+        bidang: await countBidangs(),
+        user: await countUsers(),
+        report: await countReports(),
+      },
+      accounts: {
+        superAdmin: { email: adminEmail, role: "PIMPINAN_KASATPOL", password: "(dari env ADMIN_PASSWORD)" },
+        operator: { email: "operator@jabar.go.id", role: "OPERATOR", password: "OperatorJabar!Tegas26" },
+        kabid: { email: "kabidsatpol@jabar.go.id", role: "PIMPINAN_KABID", password: "KabidSatpolJabar26" },
+        sekretaris: { email: "sekretaris@jabar.go.id", role: "PIMPINAN_SEKRETARIS", password: "SekretarisJabar!Mantap26" },
+      },
+    });
+  } catch (e) {
     return NextResponse.json(
-      { error: "Gagal setup", detail: String((err as Error)?.message ?? err) },
+      { error: "Setup gagal.", detail: e instanceof Error ? e.message : String(e) },
       { status: 500 }
     );
   }
 }
 
 export async function GET(req: Request) {
-  try {
-    const url = new URL(req.url);
-    const key = url.searchParams.get("key") ?? undefined;
-    return await runSetup(key);
-  } catch (err) {
-    return NextResponse.json(
-      { error: "Gagal setup", detail: String((err as Error)?.message ?? err) },
-      { status: 500 }
-    );
-  }
+  const url = new URL(req.url);
+  const key = url.searchParams.get("key");
+  return POST(
+    new Request(req.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: key ?? undefined }),
+    })
+  );
 }

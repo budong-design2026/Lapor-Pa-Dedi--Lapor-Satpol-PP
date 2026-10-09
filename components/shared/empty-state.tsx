@@ -1,43 +1,50 @@
+"use client";
+
 import * as React from "react";
-import { cn } from "@/lib/utils";
+import { type LucideIcon, Inbox } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 /**
- * EmptyState — icon + title + description + optional action.
- * Pure presentational.
+ * EmptyState — reusable placeholder for empty list / no-result / errors.
  */
-export interface EmptyStateProps {
-  icon?: React.ReactNode;
-  title: string;
-  description?: string;
-  action?: React.ReactNode;
-  className?: string;
-}
-
 export function EmptyState({
-  icon,
+  icon: Icon = Inbox,
   title,
   description,
   action,
-  className,
-}: EmptyStateProps) {
+}: {
+  icon?: LucideIcon;
+  title: string;
+  description?: string;
+  action?: { label: string; onClick: () => void };
+}) {
   return (
     <div
-      className={cn(
-        "glass-card rounded-xl flex flex-col items-center justify-center gap-3 p-8 text-center",
-        className,
-      )}
       role="status"
+      className="glass-card rounded-xl p-8 flex flex-col items-center justify-center text-center gap-3"
     >
-      {icon ? (
-        <div className="text-muted-foreground/60" aria-hidden>
-          {icon}
-        </div>
+      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/15 text-muted-foreground">
+        <Icon className="h-7 w-7" aria-hidden />
+      </div>
+      <div className="space-y-1">
+        <p className="text-base font-semibold">{title}</p>
+        {description ? (
+          <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+            {description}
+          </p>
+        ) : null}
+      </div>
+      {action ? (
+        <Button
+          type="button"
+          variant="default"
+          size="sm"
+          onClick={action.onClick}
+          className="mt-1"
+        >
+          {action.label}
+        </Button>
       ) : null}
-      <h3 className="text-base font-semibold text-foreground">{title}</h3>
-      {description ? (
-        <p className="text-sm text-muted-foreground max-w-sm">{description}</p>
-      ) : null}
-      {action ? <div className="mt-2">{action}</div> : null}
     </div>
   );
 }

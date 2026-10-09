@@ -1,26 +1,27 @@
+"use client";
+
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
+type Tag = "span" | "h1" | "h2" | "h3";
+
 /**
- * GoldShimmerText — renders text with the gold-shimmer animated gradient.
- * Tag ∈ span/h1/h2/h3. Pure presentational.
+ * GoldShimmerText — "JABAR ISTIMEWA" / hero title effect.
+ * Relies on `.gold-shimmer` from globals.css (animated gold gradient clip-text).
  */
-export type GoldShimmerTag = "span" | "h1" | "h2" | "h3";
-
-export interface GoldShimmerTextProps extends React.HTMLAttributes<HTMLElement> {
-  as?: GoldShimmerTag;
-}
-
 export function GoldShimmerText({
-  as = "span",
+  children,
   className,
-  ...props
-}: GoldShimmerTextProps) {
-  const Tag = as;
+  as = "span",
+}: {
+  children: React.ReactNode;
+  className?: string;
+  as?: Tag;
+}) {
+  const Tag = as as React.ElementType;
   return (
-    <Tag
-      className={cn("gold-shimmer font-black tracking-tight", className)}
-      {...props}
-    />
+    <Tag className={cn("gold-shimmer font-black tracking-tight", className)}>
+      {children}
+    </Tag>
   );
 }

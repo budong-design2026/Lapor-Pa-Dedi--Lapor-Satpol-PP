@@ -1,52 +1,52 @@
-// /api/reports/stats — public dashboard stats
+// /api/reports/stats — Public aggregate stats via raw libsql.
 import { NextResponse } from "next/server";
 import {
-  ensureTables,
   countReports,
-  countReportsWhereArgs,
   countReportsByField,
   countReportsByKabupaten,
   countReportsLast7Days,
   avgResponseHours,
+  countReportsWhere,
 } from "@/lib/db-raw";
-import { CATEGORIES, RISK_LEVELS, REPORT_STATUSES } from "@/lib/constants";
+import { CATEGORIES, REPORT_STATUSES, RISK_LEVELS } from "@/lib/constants";
 
 export async function GET() {
   try {
-    await ensureTables();
-    const totalReports = await countReports();
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
-    const thisMonth = await countReportsWhereArgs(`"createdAt" >= ?`, [monthStart.toISOString()]);
-    const completed = await countReportsWhereArgs(`"status" = ?`, ["SELESAI"]);
-    const completionRate = totalReports > 0 ? Math.round((completed / totalReports) * 100) : 0;
+    const total = await countReports();
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const thisMonth = await countReportsWhere(`"createdAt" >= '${monthStart}'`);
+    const completed = await countReportsWhere(`"status" = 'SELESAI'`);
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-    const byCategoryRows = await countReportsByField("category");
-    const byCategory = CATEGORIES.map((c) => {
-      const r = byCategoryRows.find((x) => x.key === c.code);
-      return { code: c.code, name: c.name, count: r ? r.count : 0 };
-    });
+    const byCategoryRaw = await countReportsByField("category");
+    const byCategory = CATEGORIES.map((c) => ({
+      category: c.code,
+      name: c.name,
+      count: byCategoryRaw.find((r) => r.key === c.code)?.count ?? 0,
+    }))
+      .filter((r) => r.count > 0)
+      .sort((a, b) => b.count - a.count);
 
     const byKabupaten = await countReportsByKabupaten();
 
-    const byRiskRows = await countReportsByField("riskLevel");
-    const byRisk = Object.keys(RISK_LEVELS).map((k) => {
-      const r = byRiskRows.find((x) => x.key === k);
-      return { level: k, count: r ? r.count : 0 };
-    });
+    const byRiskRaw = await countReportsByField("riskLevel");
+    const byRisk = Object.keys(RISK_LEVELS).map((k) => ({
+      riskLevel: k,
+      count: byRiskRaw.find((r) => r.key === k)?.count ?? 0,
+    }));
 
-    const byStatusRows = await countReportsByField("status");
-    const byStatus = Object.keys(REPORT_STATUSES).map((k) => {
-      const r = byStatusRows.find((x) => x.key === k);
-      return { status: k, label: REPORT_STATUSES[k as keyof typeof REPORT_STATUSES].label, count: r ? r.count : 0 };
-    });
+    const byStatusRaw = await countReportsByField("status");
+    const byStatus = Object.keys(REPORT_STATUSES).map((k) => ({
+      status: k,
+      count: byStatusRaw.find((r) => r.key === k)?.count ?? 0,
+    }));
 
     const last7Days = await countReportsLast7Days();
-    const avgResp = await avgResponseHours();
+    const avgHours = await avgResponseHours();
 
     return NextResponse.json({
-      totalReports,
+      totalReports: total,
       thisMonth,
       completed,
       completionRate,
@@ -54,13 +54,11 @@ export async function GET() {
       byKabupaten,
       byRisk,
       byStatus,
-      avgResponseHours: Math.round(avgResp * 10) / 10,
+      avgResponseHours: Math.round(avgHours * 10) / 10,
       last7Days,
     });
-  } catch (err) {
-    return NextResponse.json(
-      { error: "Gagal memuat statistik", detail: String((err as Error)?.message ?? err) },
-      { status: 500 }
-    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
