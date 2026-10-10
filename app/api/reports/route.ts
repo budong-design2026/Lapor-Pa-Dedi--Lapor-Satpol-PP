@@ -6,7 +6,7 @@ import {
   countReports,
 } from "@/lib/db-raw";
 import { generateTicketNumber } from "@/lib/report-helpers";
-import { CATEGORIES, KABUPATEN_KOTA, ROLE_LABELS } from "@/lib/constants";
+import { CATEGORIES, KABUPATEN_KOTA } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
 
 const VALID_CATS = new Set(CATEGORIES.map((c) => c.code));
@@ -21,49 +21,31 @@ function maskReport(r: Record<string, unknown>, canSeePii: boolean): Record<stri
   const anon = r.isAnonymous === 1 || r.isAnonymous === true;
   const hidePii = anon || !canSeePii;
   if (hidePii) {
-    return {
-      ...r,
-      reporterPhone: null,
-      reporterNik: null,
-      reporterBirthPlace: null,
-      reporterBirthDate: null,
-      reporterAddress: null,
-      reporterName: anon ? "Anonim" : r.reporterName,
-    };
+    return { ...r, reporterPhone: null, reporterNik: null, reporterBirthPlace: null, reporterBirthDate: null, reporterAddress: null, reporterName: anon ? "Anonim" : r.reporterName };
   }
   return r;
 }
 
-// ─── POST /api/reports (create) ───
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const category = String(body.category ?? "").trim();
-    if (!VALID_CATS.has(category)) {
-      return NextResponse.json({ error: "Kategori tidak valid" }, { status: 400 });
-    }
+    if (!VALID_CATS.has(category)) return NextResponse.json({ error: "Kategori tidak valid" }, { status: 400 });
     const description = String(body.description ?? "").trim();
-    if (description.length < 10) {
-      return NextResponse.json({ error: "Deskripsi minimal 10 karakter" }, { status: 400 });
-    }
+    if (description.length < 10) return NextResponse.json({ error: "Deskripsi minimal 10 karakter" }, { status: 400 });
     const address = String(body.address ?? "").trim();
     if (!address) return NextResponse.json({ error: "Alamat wajib" }, { status: 400 });
     const kabupaten = String(body.kabupaten ?? "").trim();
-    if (!VALID_KAB.has(kabupaten)) {
-      return NextResponse.json({ error: "Kabupaten/kota tidak valid" }, { status: 400 });
-    }
+    if (!VALID_KAB.has(kabupaten)) return NextResponse.json({ error: "Kabupaten/kota tidak valid" }, { status: 400 });
     const lat = Number(body.latitude);
     const lng = Number(body.longitude);
-    if (Number.isNaN(lat) || Number.isNaN(lng)) {
-      return NextResponse.json({ error: "Koordinat GPS tidak valid" }, { status: 400 });
-    }
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return NextResponse.json({ error: "Koordinat GPS tidak valid" }, { status: 400 });
 
     const reporterName = String(body.reporterName ?? "Warga").trim() || "Warga";
     const isAnon = parseBool(body.isAnonymous);
     const photos = Array.isArray(body.photos) ? body.photos.slice(0, 10) : [];
     const videos = Array.isArray(body.videos) ? body.videos.slice(0, 5) : [];
 
-    // ticket (retry on conflict)
     let ticket = "";
     for (let i = 0; i < 5; i++) {
       ticket = generateTicketNumber();
@@ -74,48 +56,26 @@ export async function POST(req: Request) {
     const id = genId();
     const now = new Date().toISOString();
     await raw().execute({
-      sql: `INSERT INTO "Report" (
-        "id","ticketNumber","reporterId","isAnonymous","reporterName","reporterPhone","reporterNik",
-        "reporterBirthPlace","reporterBirthDate","reporterAddress",
-        "category","subCategory","description","address","latitude","longitude","kabupaten",
-        "photosJson","videosJson","voiceTranscript",
-        "status","riskLevel","assignedBidangId","assignedTo","slaDeadline",
-        "createdAt","photosAfterJson"
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      sql: `INSERT INTO "Report" ("id","ticketNumber","reporterId","isAnonymous","reporterName","reporterPhone","reporterNik","reporterBirthPlace","reporterBirthDate","reporterAddress","category","subCategory","description","address","latitude","longitude","kabupaten","photosJson","videosJson","voiceTranscript","status","riskLevel","assignedBidangId","assignedTo","slaDeadline","createdAt","photosAfterJson") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       args: [
         id, ticket, body.reporterId ?? null, isAnon, reporterName,
         body.reporterPhone ?? null, body.reporterNik ?? null,
         body.reporterBirthPlace ?? null, body.reporterBirthDate ?? null, body.reporterAddress ?? null,
         category, body.subCategory ?? null, description, address, lat, lng, kabupaten,
         JSON.stringify(photos), JSON.stringify(videos), body.voiceTranscript ?? null,
-        "DITERIMA", null, null, null, null,
-        now, "[]",
+        "DITERIMA", null, null, null, null, now, "[]",
       ],
     });
 
     const res = await raw().execute({ sql: `SELECT * FROM "Report" WHERE "id"=?`, args: [id] });
     const row = res.rows[0] as Record<string, unknown> | undefined;
-    const report = row
-      ? {
-          ...row,
-          isAnonymous: Number(row.isAnonymous) === 1,
-          photos: parseArr(row.photosJson as string),
-          videos: parseArr(row.videosJson as string),
-          photosAfter: parseArr(row.photosAfterJson as string),
-          progressNotes: [],
-        }
-      : null;
-
+    const report = row ? { ...row, isAnonymous: Number(row.isAnonymous) === 1, photos: parseArr(row.photosJson as string), videos: parseArr(row.videosJson as string), photosAfter: parseArr(row.photosAfterJson as string), progressNotes: [] } : null;
     return NextResponse.json({ report }, { status: 201 });
   } catch (e) {
-    return NextResponse.json(
-      { error: "Gagal membuat laporan", detail: e instanceof Error ? e.message : String(e) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Gagal membuat laporan", detail: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }
 
-// ─── GET /api/reports (list) ───
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
@@ -139,38 +99,23 @@ export async function GET(req: Request) {
     if (category) { where.push(`"category"=?`); args.push(category); }
     if (search) { where.push(`("ticketNumber" LIKE ? OR "description" LIKE ? OR "address" LIKE ? OR "kabupaten" LIKE ?)`); const s = `%${search}%`; args.push(s, s, s, s); }
     const whereSql = where.join(" AND ");
-
     const orderSql = sort === "oldest" ? `"createdAt" ASC` : sort === "risk" ? `CASE "riskLevel" WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 ELSE 4 END ASC, "createdAt" DESC` : `"createdAt" DESC`;
 
-    const total = await countReports(); // simplified count without filters for speed; for filtered count use below
+    const total = await countReports();
     let filteredCount = total;
     if (where.length > 1) {
       const cRes = await raw().execute({ sql: `SELECT COUNT(*) as c FROM "Report" WHERE ${whereSql}`, args });
       filteredCount = Number((cRes.rows[0] as Record<string, unknown>)?.c ?? 0);
     }
 
-    const rowsRes = await raw().execute({
-      sql: `SELECT * FROM "Report" WHERE ${whereSql} ORDER BY ${orderSql} LIMIT ? OFFSET ?`,
-      args: [...args, limit, (page - 1) * limit],
-    });
+    const rowsRes = await raw().execute({ sql: `SELECT * FROM "Report" WHERE ${whereSql} ORDER BY ${orderSql} LIMIT ? OFFSET ?`, args: [...args, limit, (page - 1) * limit] });
     const reports = (rowsRes.rows as Record<string, unknown>[]).map((r) => {
       const masked = maskReport(r, canSeePii);
-      return {
-        ...masked,
-        isAnonymous: Number(masked.isAnonymous) === 1,
-        photos: parseArr(masked.photosJson as string),
-        videos: parseArr(masked.videosJson as string),
-        photosAfter: parseArr(masked.photosAfterJson as string),
-      };
+      return { ...masked, isAnonymous: Number(masked.isAnonymous) === 1, photos: parseArr(masked.photosJson as string), videos: parseArr(masked.videosJson as string), photosAfter: parseArr(masked.photosAfterJson as string) };
     });
 
     return NextResponse.json({ reports, total: filteredCount, page, limit });
   } catch (e) {
-    return NextResponse.json(
-      { error: "Gagal mengambil laporan", detail: e instanceof Error ? e.message : String(e) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Gagal mengambil laporan", detail: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }
-
-void ROLE_LABELS;
