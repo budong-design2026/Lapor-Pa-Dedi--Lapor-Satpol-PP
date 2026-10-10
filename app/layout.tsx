@@ -41,6 +41,7 @@ export const metadata: Metadata = {
     title: "Yeuh Pa Dedi, yeuh SatpolPP Jabar, aya pelanggaran !!!",
     description:
       "Aplikasi Pengaduan Trantibumlinmas Masyarakat Jawa Barat — Lapor pelanggaran, lacak status, transparansi publik.",
+    images: [{ url: "/og-image.png", width: 1200, height: 630 }]
     siteName: "Yeuh Satpol!",
     type: "website",
     locale: "id_ID",
