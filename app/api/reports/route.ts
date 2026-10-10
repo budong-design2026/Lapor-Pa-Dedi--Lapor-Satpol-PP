@@ -1,10 +1,6 @@
-// /api/reports — POST (create) + GET (list) via raw libsql (bypass Prlesia).
+// /api/reports — POST (create) + GET (list) via raw libsql
 import { NextResponse } from "next/server";
-import {
-  raw,
-  genId,
-  countReports,
-} from "@/lib/db-raw";
+import { raw, genId, countReports } from "@/lib/db-raw";
 import { generateTicketNumber } from "@/lib/report-helpers";
 import { CATEGORIES, KABUPATEN_KOTA } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
@@ -17,14 +13,6 @@ function parseArr(json: string | null | undefined): string[] {
   try { const v = JSON.parse(json); return Array.isArray(v) ? v : []; } catch { return []; }
 }
 function parseBool(v: unknown): number { return v ? 1 : 0; }
-function maskReport(r: Record<string, unknown>, canSeePii: boolean): Record<string, unknown> {
-  const anon = r.isAnonymous === 1 || r.isAnonymous === true;
-  const hidePii = anon || !canSeePii;
-  if (hidePii) {
-    return { ...r, reporterPhone: null, reporterNik: null, reporterBirthPlace: null, reporterBirthDate: null, reporterAddress: null, reporterName: anon ? "Anonim" : r.reporterName };
-  }
-  return r;
-}
 
 export async function POST(req: Request) {
   try {
@@ -55,17 +43,12 @@ export async function POST(req: Request) {
 
     const id = genId();
     const now = new Date().toISOString();
-    await raw().execute({
-      sql: `INSERT INTO "Report" ("id","ticketNumber","reporterId","isAnonymous","reporterName","reporterPhone","reporterNik","reporterBirthPlace","reporterBirthDate","reporterAddress","category","subCategory","description","address","latitude","longitude","kabupaten","photosJson","videosJson","voiceTranscript","status","riskLevel","assignedBidangId","assignedTo","slaDeadline","createdAt","photosAfterJson") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      args: [
-        id, ticket, body.reporterId ?? null, isAnon, reporterName,
-        body.reporterPhone ?? null, body.reporterNik ?? null,
-        body.reporterBirthPlace ?? null, body.reporterBirthDate ?? null, body.reporterAddress ?? null,
-        category, body.subCategory ?? null, description, address, lat, lng, kabupaten,
-        JSON.stringify(photos), JSON.stringify(videos), body.voiceTranscript ?? null,
-        "DITERIMA", null, null, null, null, now, "[]",
-      ],
-    });
+
+    const cols = ["id","ticketNumber","reporterId","isAnonymous","reporterName","reporterPhone","reporterNik","reporterBirthPlace","reporterBirthDate","reporterAddress","category","subCategory","description","address","latitude","longitude","kabupaten","photosJson","videosJson","voiceTranscript","status","riskLevel","assignedBidangId","assignedTo","slaDeadline","createdAt","photosAfterJson"];
+    const vals = [id, ticket, body.reporterId ?? null, isAnon, reporterName, body.reporterPhone ?? null, body.reporterNik ?? null, body.reporterBirthPlace ?? null, body.reporterBirthDate ?? null, body.reporterAddress ?? null, category, body.subCategory ?? null, description, address, lat, lng, kabupaten, JSON.stringify(photos), JSON.stringify(videos), body.voiceTranscript ?? null, "DITERIMA", null, null, null, null, now, "[]"];
+    const ph = cols.map(() => "?").join(",");
+    const sql = `INSERT INTO "Report" (${cols.map((c) => `"${c}"`).join(",")}) VALUES (${ph})`;
+    await raw().execute({ sql, args: vals });
 
     const res = await raw().execute({ sql: `SELECT * FROM "Report" WHERE "id"=?`, args: [id] });
     const row = res.rows[0] as Record<string, unknown> | undefined;
@@ -97,7 +80,7 @@ export async function GET(req: Request) {
     if (riskLevel) { where.push(`"riskLevel"=?`); args.push(riskLevel); }
     if (kabupaten) { where.push(`"kabupaten"=?`); args.push(kabupaten); }
     if (category) { where.push(`"category"=?`); args.push(category); }
-    if (search) { where.push(`("ticketNumber" LIKE ? OR "description" LIKE ? OR "address" LIKE ? OR "kabupaten" LIKE ?)`); const s = `%${search}%`; args.push(s, s, s, s); }
+    if (search) { const s = `%${search}%`; where.push(`("ticketNumber" LIKE ? OR "description" LIKE ? OR "address" LIKE ? OR "kabupaten" LIKE ?)`); args.push(s, s, s, s); }
     const whereSql = where.join(" AND ");
     const orderSql = sort === "oldest" ? `"createdAt" ASC` : sort === "risk" ? `CASE "riskLevel" WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 ELSE 4 END ASC, "createdAt" DESC` : `"createdAt" DESC`;
 
@@ -110,7 +93,9 @@ export async function GET(req: Request) {
 
     const rowsRes = await raw().execute({ sql: `SELECT * FROM "Report" WHERE ${whereSql} ORDER BY ${orderSql} LIMIT ? OFFSET ?`, args: [...args, limit, (page - 1) * limit] });
     const reports = (rowsRes.rows as Record<string, unknown>[]).map((r) => {
-      const masked = maskReport(r, canSeePii);
+      const anon = Number(r.isAnonymous) === 1;
+      const hidePii = anon || !canSeePii;
+      const masked = hidePii ? { ...r, reporterPhone: null, reporterNik: null, reporterBirthPlace: null, reporterBirthDate: null, reporterAddress: null, reporterName: anon ? "Anonim" : r.reporterName } : r;
       return { ...masked, isAnonymous: Number(masked.isAnonymous) === 1, photos: parseArr(masked.photosJson as string), videos: parseArr(masked.videosJson as string), photosAfter: parseArr(masked.photosAfterJson as string) };
     });
 
